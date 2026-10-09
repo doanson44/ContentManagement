@@ -196,7 +196,12 @@ public sealed class AdminAuthController(
 
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     [HttpGet("me")]
-    public IActionResult Me() => Ok(new { email = User.FindFirstValue(ClaimTypes.Email), role = User.FindFirstValue(ClaimTypes.Role) });
+    public IActionResult Me() => Ok(new
+    {
+        email = User.FindFirstValue(ClaimTypes.Email),
+        role = User.FindFirstValue(ClaimTypes.Role),
+        permissions = User.FindAll("scope").Select(claim => claim.Value).Distinct(StringComparer.Ordinal).OrderBy(scope => scope).ToArray()
+    });
 
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     [HttpPost("logout")]
