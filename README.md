@@ -139,7 +139,7 @@ Use a dedicated database/login with least-privilege access and a valid trusted S
 
 ### Dashboard setup
 
-After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to test SMTP delivery and set the stale-file cleanup policy. Configure SMTP through the server's `Smtp` section in `appsettings.json` or environment variables; the dashboard does not persist email configuration to SQL Server.
+After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to configure stale-file cleanup policy. SMTP configuration is separate and is loaded from the server's `Smtp` section in `appsettings.json` or environment variables; the dashboard does not configure or test email delivery.
 
 Default cleanup policy: files older than 90 days are eligible, the worker checks every 24 hours, and marked files wait 7 days before deletion. Hangfire polls hourly and runs when the configured interval has elapsed. The worker marks eligible files first and deletes the binary plus metadata only after the grace period. Each run is bounded to 500 marked files and 100 deletions. Cleanup runs only when Hangfire is enabled and configured.
 
@@ -151,5 +151,5 @@ dotnet ef database update --project src/ContentManagement.Server/ContentManageme
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. The Setup page now supports SMTP configuration, test email delivery, and stale-file cleanup policy. API client, file, and JSON management screens remain placeholders; their CRUD APIs have not yet been implemented.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables. API client, file, and JSON management screens remain placeholders; their CRUD APIs have not yet been implemented.
 
