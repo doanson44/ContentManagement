@@ -1,0 +1,82 @@
+@page "/register"
+@using System.ComponentModel.DataAnnotations
+@using System.Net
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<PageTitle>Register · ContentManagement</PageTitle>
+
+<section class="login-shell">
+    <div class="login-brand">
+        <div class="brand-mark">CM</div>
+        <p class="eyebrow">CONTENT MANAGEMENT</p>
+        <h1>Create your account</h1>
+        <p class="login-subtitle">Register with your email address. We’ll send you a verification link to activate your account.</p>
+    </div>
+    <div class="login-card">
+        <h2>Register with email</h2>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <p class="form-message @(_success ? "success" : "error")" role="@(_success ? "status" : "alert")">@_message</p>
+        }
+        @if (!_success)
+        {
+            <label for="email">Email address</label>
+            <input id="email" type="email" autocomplete="email" maxlength="254" @bind="_email" @bind:event="oninput" placeholder="you@company.com" disabled="@_busy" />
+            <button class="primary-button" @onclick="RegisterAsync" disabled="@_busy">@(_busy ? "Sending link…" : "Send verification link")</button>
+        }
+        <p class="fine-print"><a href="/">Already have an account? Sign in</a></p>
+    </div>
+    <footer>Secure email verification · ContentManagement</footer>
+</section>
+
+@code {
+    private string _email = "";
+    private string _message = "";
+    private bool _busy;
+    private bool _success;
+
+    private async Task RegisterAsync()
+    {
+        _message = "";
+        if (!new EmailAddressAttribute().IsValid(_email))
+        {
+            _message = "Enter a valid email address.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/auth/request-registration", new { Email = _email.Trim() });
+            if (response.IsSuccessStatusCode)
+            {
+                _success = true;
+                _message = "If this address can be registered, a verification link will be sent. Check your inbox.";
+            }
+            else
+            {
+                _message = await ReadErrorAsync(response);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally { _busy = false; }
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var error = await response.Content.ReadFromJsonAsync<ApiError>();
+            return error?.Message ?? error?.Title ?? (response.StatusCode == HttpStatusCode.TooManyRequests
+                ? "Too many attempts. Wait a few minutes and try again."
+                : "The request could not be completed. Please try again.");
+        }
+        catch { return "The request could not be completed. Please try again."; }
+    }
+
+    private sealed record ApiError(string? Message, string? Title);
+}
