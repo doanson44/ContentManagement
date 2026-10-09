@@ -47,22 +47,14 @@ else if (_signedIn)
             <section class="setup-card">
                 <div class="setup-section-heading">
                     <div class="setup-section-icon email-setup-icon">✉</div>
-                    <div><h2>Email configuration</h2><p>SMTP settings used for administrator OTP and test messages.</p></div>
+                    <div><h2>Email delivery</h2><p>SMTP settings are loaded from the server's appsettings configuration and environment variables, not stored in the database.</p></div>
                 </div>
                 <div class="setup-form-grid">
-                    <label>SMTP host<input @bind="_model.SmtpHost" placeholder="smtp.example.com" /></label>
-                    <label>Port<input type="number" min="1" max="65535" @bind="_model.SmtpPort" /></label>
-                    <label>Username<input @bind="_model.SmtpUsername" autocomplete="username" /></label>
-                    <label>Password<input type="password" @bind="_model.SmtpPassword" autocomplete="new-password" placeholder="@(_hasPassword ? "Saved; leave blank to keep current" : "SMTP password")" /></label>
-                    <label>From email<input type="email" @bind="_model.SmtpFromEmail" placeholder="noreply@example.com" /></label>
-                    <label>From name<input @bind="_model.SmtpFromName" /></label>
-                    <label class="setup-checkbox"><input type="checkbox" @bind="_model.SmtpUseSsl" /> Use SSL/TLS</label>
                     <label>Test recipient<input type="email" @bind="_model.TestRecipientEmail" placeholder="you@example.com" /></label>
                 </div>
+                <p class="setup-hint">Configure the server's <code>Smtp</code> section, then restart the application if configuration providers do not reload automatically.</p>
                 <div class="setup-actions">
-                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save settings</button>
                     <button class="setup-secondary" @onclick="TestEmailAsync" disabled="@_busy">Test send</button>
-                    @if (_hasPassword) { <span class="setup-hint">A password is saved.</span> }
                 </div>
             </section>
 
@@ -181,15 +173,6 @@ else
         _message = "";
         try
         {
-            using var saveResponse = await Http.PutAsJsonAsync("api/admin/setup", _model);
-            if (!saveResponse.IsSuccessStatusCode)
-            {
-                SetMessage("Save valid SMTP settings before sending a test email.", true);
-                return;
-            }
-            var saved = await saveResponse.Content.ReadFromJsonAsync<SetupResponse>();
-            _hasPassword = saved?.HasSmtpPassword ?? _hasPassword;
-            _model.SmtpPassword = "";
             using var response = await Http.PostAsJsonAsync("api/admin/setup/test-email", new TestEmailRequest(_model.TestRecipientEmail));
             var result = await response.Content.ReadFromJsonAsync<ApiMessage>();
             SetMessage(result?.Message ?? (response.IsSuccessStatusCode ? "Test email sent." : "Test email failed. Check server logs."), !response.IsSuccessStatusCode);
