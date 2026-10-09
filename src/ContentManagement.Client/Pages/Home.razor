@@ -3,6 +3,7 @@
 @using System.Net.Http.Json
 @using System.ComponentModel.DataAnnotations
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
 <PageTitle>Sign in · ContentManagement</PageTitle>
 
@@ -18,11 +19,8 @@
     {
         <div class="login-card">
             <div class="status-icon">✓</div>
-            <h2>You are signed in</h2>
-            <p class="muted">Signed in as <strong>@_email</strong></p>
-            <p class="muted">Your admin session is protected by a server-managed cookie.</p>
-            <button class="primary-button" @onclick="LogoutAsync" disabled="@_busy">Sign out</button>
-            @if (!string.IsNullOrWhiteSpace(_message)) { <p class="form-message error">@_message</p> }
+            <h2>Signed in successfully</h2>
+            <p class="muted">Opening your administrator dashboard…</p>
         </div>
     }
     else if (!_otpRequested)
@@ -75,6 +73,7 @@
                 {
                     _email = session.Email;
                     _signedIn = true;
+                    Navigation.NavigateTo("/dashboard", replace: true);
                 }
             }
         }
@@ -133,8 +132,8 @@
             using var response = await Http.PostAsJsonAsync("api/auth/verify-otp", new { Email = _email.Trim(), Code = _code });
             if (response.IsSuccessStatusCode)
             {
-                _signedIn = true;
-                _message = "";
+                Navigation.NavigateTo("/dashboard", forceLoad: true, replace: true);
+                return;
             }
             else
             {
