@@ -21,9 +21,18 @@ else if (_signedIn)
             {
                 <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
             }
-            <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
-            <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
-            <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+            @if (_isAdministrator)
+            {
+                <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
+            }
+            @if (CanAccessFiles)
+            {
+                <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
+            }
+            @if (CanAccessJson)
+            {
+                <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+            }
             @if (_isAdministrator)
             {
                 <p class="sidebar-label">SYSTEM</p>
@@ -69,7 +78,7 @@ else if (_signedIn)
 
             <div class="section-heading">
                 <div><h2>Management</h2><p>Core areas of your content platform</p></div>
-                <span class="module-count">@(_isAdministrator ? 4 : 3) modules</span>
+                <span class="module-count">@VisibleModuleCount modules</span>
             </div>
 
             <section class="module-grid" aria-label="Management modules">
@@ -82,24 +91,33 @@ else if (_signedIn)
                     <div class="module-footer"><span><a href="/dashboard/users">Manage users</a></span><span class="module-arrow">↗</span></div>
                 </article>
                 }
-                <article class="module-card">
-                    <div class="module-icon api-icon">⌘</div>
-                    <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
-                    <p>Register applications, configure client credentials, and rotate or revoke secrets.</p>
-                    <div class="module-footer"><span>Client configuration</span><span class="module-arrow">↗</span></div>
-                </article>
-                <article class="module-card">
-                    <div class="module-icon files-icon">▤</div>
-                    <div class="module-card-heading"><h3>File management</h3><span class="module-status">Planned</span></div>
-                    <p>Browse file metadata, inspect status, and manage stored binary content.</p>
-                    <div class="module-footer"><span>Binary assets</span><span class="module-arrow">↗</span></div>
-                </article>
-                <article class="module-card">
-                    <div class="module-icon json-icon">{ }</div>
-                    <div class="module-card-heading"><h3>JSON documents</h3><span class="module-status">Planned</span></div>
-                    <p>Manage JSON documents and their metadata, validation, and lifecycle.</p>
-                    <div class="module-footer"><span>Structured content</span><span class="module-arrow">↗</span></div>
-                </article>
+                @if (_isAdministrator)
+                {
+                    <article class="module-card">
+                        <div class="module-icon api-icon">⌘</div>
+                        <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
+                        <p>Register applications, configure client credentials, and rotate or revoke secrets.</p>
+                        <div class="module-footer"><span>Client configuration</span><span class="module-arrow">↗</span></div>
+                    </article>
+                }
+                @if (CanAccessFiles)
+                {
+                    <article class="module-card">
+                        <div class="module-icon files-icon">▤</div>
+                        <div class="module-card-heading"><h3>File management</h3><span class="module-status">Planned</span></div>
+                        <p>Browse file metadata, inspect status, and manage stored binary content.</p>
+                        <div class="module-footer"><span>Binary assets</span><span class="module-arrow">↗</span></div>
+                    </article>
+                }
+                @if (CanAccessJson)
+                {
+                    <article class="module-card">
+                        <div class="module-icon json-icon">{ }</div>
+                        <div class="module-card-heading"><h3>JSON documents</h3><span class="module-status">Planned</span></div>
+                        <p>Manage JSON documents and their metadata, validation, and lifecycle.</p>
+                        <div class="module-footer"><span>Structured content</span><span class="module-arrow">↗</span></div>
+                    </article>
+                }
             </section>
             <footer class="dashboard-footer">ContentManagement <span>·</span> Administrator workspace</footer>
         </main>
@@ -116,6 +134,7 @@ else
     private bool _isAdministrator;
     private bool _showWelcome;
     private bool _busy;
+    private HashSet<string> _permissions = new(StringComparer.Ordinal);
     private string _email = "";
     private string _message = "";
 
@@ -130,6 +149,7 @@ else
                 var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
                 _email = session?.Email ?? "";
                 _isAdministrator = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal);
+                _permissions = new HashSet<string>(session?.Permissions ?? [], StringComparer.Ordinal);
                 _signedIn = !string.IsNullOrWhiteSpace(_email);
             }
         }
@@ -157,7 +177,11 @@ else
         finally { _busy = false; }
     }
 
+    private bool CanAccessFiles => _isAdministrator || _permissions.Overlaps(["files.read", "files.write", "files.delete"]);
+    private bool CanAccessJson => _isAdministrator || _permissions.Overlaps(["json.read", "json.write", "json.delete"]);
+    private int VisibleModuleCount => (_isAdministrator ? 2 : 0) + (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
+
     private void DismissWelcome() { _showWelcome = false; Navigation.NavigateTo("/dashboard", replace: true); }
 
-    private sealed record SessionResponse(string Email, string? Role);
+    private sealed record SessionResponse(string Email, string? Role, string[]? Permissions);
 }
