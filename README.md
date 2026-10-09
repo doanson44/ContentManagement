@@ -29,11 +29,11 @@ Use a secret manager or protected environment variables in production; never emb
 
 Supported scopes are `files.read`, `files.write`, `files.delete`, `json.read`, `json.write`, and `json.delete`. Grant only required scopes. Apply a policy such as `[Authorize(Policy = ScopePolicies.FilesRead)]` on each corresponding controller action. The fallback authorization policy requires authentication for all endpoints unless explicitly marked `[AllowAnonymous]`.
 
-This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client API client registration, hashed client-secret storage, rotation/revocation, and OAuth 2.0 client credentials are not implemented. Browser administrator and managed-user sessions are separate from this API-key mode. Do not use this API key as a browser login credential.
+This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client API client registration, hashed client-secret storage, rotation/revocation, and OAuth 2.0 client credentials are not implemented. The browser administrator session is separate from this API-key mode. Do not use this API key as a browser login credential.
 
 ## Administrator email OTP login
 
-The browser admin login uses email OTP and a server-issued cookie; it is separate from the static API-key mechanism used for server-to-server integrations.
+The browser admin login uses email OTP and a server-issued cookie; it is separate from the static API-key mechanism used for server-to-server integrations. The application has exactly one interactive identity: the administrator email address or addresses explicitly configured in `AdminAuth:AllowedEmails`. There is no public registration, invitation flow, or managed-user login.
 
 Configure an explicit allowlist and a random HMAC key (at least 32 characters) through protected environment variables or a secret manager. Configure SMTP with the credentials for your email provider. Do not commit these values:
 
@@ -52,7 +52,7 @@ $env:Smtp__FromEmail = "noreply@your-domain.example"
 $env:Authentication__ApiKey = "<server-to-server-api-key>"
 ```
 
-The OTP challenge is persisted in SQL Server. OTPs expire, are one-time-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. Admins can invite managed users from Dashboard > Users, assign the supported file/JSON scopes, disable accounts, and resend invitations. Invitation tokens are random, stored as SHA-256 hashes, expire after 48 hours, and are consumed once. Invitation acceptance activates the account and issues a user session; active managed users can later sign in using email OTP. Administrator access remains controlled only by the server-side AdminAuth:AllowedEmails allowlist; user invitations never grant the Administrator role. Unsafe requests without the API-key header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
+The OTP challenge is persisted in SQL Server. OTPs expire, are single-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. Both OTP issuance and verification enforce the server-side `AdminAuth:AllowedEmails` allowlist; an address outside that list cannot create a session. Unsafe requests without the API-key header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
 
 Apply the new migration during a planned deployment after backing up the database:
 
@@ -60,7 +60,7 @@ Apply the new migration during a planned deployment after backing up the databas
 dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
 ```
 
-The migrations include `202610090002_AddAdminOtpChallenges` and `202610090004_AddManagedUsers`. Configure the allowlist only for trusted administrators. This increment provides administrator OTP sign-in, managed-user invitations and scope assignment, and sign-out. A formal audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
+The migrations include `202610090002_AddAdminOtpChallenges` and `202610090004_AddManagedUsers` (the latter is retained for database migration history; managed-user endpoints and sign-in have been removed). Configure the allowlist only for trusted administrators. The browser authentication surface provides administrator OTP sign-in and sign-out. A formal audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
 
 ## Requirements
 
@@ -152,5 +152,5 @@ dotnet ef database update --project src/ContentManagement.Server/ContentManageme
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables. API client, file, and JSON management screens remain placeholders; their CRUD APIs have not yet been implemented.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables. API client, file, and JSON management screens remain placeholders; their CRUD APIs have not yet been implemented.
 
