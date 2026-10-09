@@ -13,6 +13,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - API-key authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. All endpoints require authentication by default; health is explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
+- Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
 ## Authentication configuration
 
@@ -108,7 +109,9 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
-- The storage services are not yet exposed through content APIs. Do not expose them until each endpoint has authentication, the appropriate scope policy, resource ownership checks, rate limits, and audit logging.
+- File endpoints require `files.read`, `files.write`, or `files.delete` scopes for API-key callers; the signed-in administrator cookie is allowed for the browser file-management UI. The current static API-key mode is shared across clients and does not provide per-resource ownership isolation. Add per-client identities, ownership policy, rate limiting, and audit logging before exposing the APIs to untrusted external clients.
+- The inline content endpoint enables HTTP Range responses for browser media playback. Browser codec support varies. HTML and SVG are served as `application/octet-stream` to avoid active content executing in the application origin.
+- Text preview is limited to files up to 256 KiB in the UI. Uploaded WebVTT subtitles are currently loaded locally into the browser for the active preview only; they are not persisted or associated with the video on the server. Persistent subtitle management is not yet implemented.
 
 ## Windows x86 package
 
@@ -152,5 +155,5 @@ dotnet ef database update --project src/ContentManagement.Server/ContentManageme
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables. API client, file, and JSON management screens remain placeholders; their CRUD APIs have not yet been implemented.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module is available on the `feature/file-management-crud` branch and provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. API clients and JSON management remain placeholders. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
 
