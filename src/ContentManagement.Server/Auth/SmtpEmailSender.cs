@@ -1,13 +1,10 @@
 using System.Net;
 using System.Net.Mail;
-using ContentManagement.Server.Data;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Auth;
 
 public sealed class SmtpEmailSender(
-    IServiceProvider services,
     IOptions<SmtpOptions> options,
     ILogger<SmtpEmailSender> logger) : IEmailSender
 {
@@ -23,22 +20,7 @@ public sealed class SmtpEmailSender(
 
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
-        var db = services.GetService<ContentManagementDbContext>();
-        var settings = db is null
-            ? null
-            : await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
-        var configured = settings is not null && !string.IsNullOrWhiteSpace(settings.SmtpHost)
-            ? new SmtpOptions
-            {
-                Host = settings.SmtpHost,
-                Port = settings.SmtpPort,
-                UseSsl = settings.SmtpUseSsl,
-                Username = settings.SmtpUsername,
-                Password = settings.SmtpPassword,
-                FromEmail = settings.SmtpFromEmail,
-                FromName = settings.SmtpFromName
-            }
-            : options.Value;
+        var configured = options.Value;
 
         if (string.IsNullOrWhiteSpace(configured.Host) ||
             !MailAddress.TryCreate(configured.FromEmail, out var fromAddress))
