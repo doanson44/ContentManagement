@@ -8,10 +8,21 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
 {
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<JsonDocumentRecord> JsonDocuments => Set<JsonDocumentRecord>();
+    public DbSet<AdminOtpChallenge> AdminOtpChallenges => Set<AdminOtpChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<AdminOtpChallenge>(entity =>
+        {
+            entity.ToTable("AdminOtpChallenges");
+            entity.HasKey(challenge => challenge.Id);
+            entity.Property(challenge => challenge.Email).HasMaxLength(254).IsRequired();
+            entity.Property(challenge => challenge.CodeHash).HasMaxLength(64).IsRequired();
+            entity.HasIndex(challenge => new { challenge.Email, challenge.CreatedUtc });
+            entity.HasIndex(challenge => new { challenge.Email, challenge.ConsumedUtc, challenge.ExpiresUtc });
+        });
 
         modelBuilder.Entity<StoredFile>(entity =>
         {
