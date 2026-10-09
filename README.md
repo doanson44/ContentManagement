@@ -115,6 +115,27 @@ CI publishes the server as a self-contained `win-x86` application, includes host
 
 Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. This baseline does not automatically apply database migrations.
 
+## Operational services: SMTP, Serilog, and Hangfire
+
+### SMTP email delivery
+
+SMTP is already used by the administrator OTP flow. Configure `Smtp:Host`, `Smtp:Port`, `Smtp:UseSsl`, and `Smtp:FromEmail`; if the provider requires authentication, set both `Smtp:Username` and `Smtp:Password`. Set `AdminAuth:AllowedEmails` only after SMTP has been tested. When at least one admin email is allowlisted, startup validates that the SMTP host and sender address are configured. Store passwords in environment variables or a secret manager, not in committed settings.
+
+### Serilog
+
+The server uses Serilog for structured application and HTTP request logging. The committed defaults write to console and daily rolling files under `logs/contentmanagement-`. Fourteen files are retained by default. Ensure the Windows service/IIS application identity can write to the configured log directory, and provision disk monitoring/rotation appropriate to the deployment. Override sink settings through standard .NET configuration providers. Never log OTP values, API keys, SMTP credentials, document payloads, or file contents.
+
+### Hangfire background jobs
+
+Hangfire is optional and disabled by default. To enable it, configure a dedicated SQL Server connection string and turn on the feature flag:
+
+```powershell
+$env:Hangfire__Enabled = "true"
+$env:ConnectionStrings__Hangfire = "Server=sql.example;Database=ContentManagementJobs;User Id=...;Password=...;Encrypt=True;TrustServerCertificate=False"
+```
+
+Use a dedicated database/login with least-privilege access and a valid trusted SQL Server certificate in production. Hangfire creates/updates its schema when enabled; plan database permissions and deployment accordingly. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. No recurring jobs or cleanup tasks are registered yet; this setup provides the infrastructure for adding them in a later increment. If Hangfire is disabled, the application does not require `ConnectionStrings:Hangfire`.
+
 ## Administrator dashboard
 
 After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. These management screens are placeholders for subsequent increments; the dashboard does not imply that CRUD APIs or client management have already been implemented.
