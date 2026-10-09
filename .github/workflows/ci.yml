@@ -1,22 +1,52 @@
 name: CI
-
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
-
+    branches: [master]
 permissions:
   contents: read
-
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MSSQL_SA_PASSWORD: "CmIntegration!2026x"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-      - run: dotnet restore
-      - run: dotnet build --no-restore --configuration Release
-      - run: dotnet test --configuration Release --no-build
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore ContentManagement.sln
+      - name: Build
+        run: dotnet build ContentManagement.sln --no-restore --configuration Release
+      - name: Unit tests
+        run: dotnet test tests/ContentManagement.UnitTests/ContentManagement.UnitTests.csproj --no-build --configuration Release
+      - name: Start SQL Server for integration tests
+        run: docker compose -f Docker/docker-compose.integration.yml up -d --wait --wait-timeout 240
+      - name: Integration tests
+        env:
+          ConnectionStrings__IntegrationTests: "Server=localhost,14333;Database=master;User Id=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True;Connect Timeout=5"
+        run: dotnet test tests/ContentManagement.IntegrationTests/ContentManagement.IntegrationTests.csproj --no-build --configuration Release
+      - name: Publish Windows x86 deployment
+        run: dotnet publish src/ContentManagement.Server/ContentManagement.Server.csproj --configuration Release --runtime win-x86 --self-contained true --output artifacts/publish
+      - name: Validate and package deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f artifacts/publish/ContentManagement.Server.exe
+          test -f artifacts/publish/wwwroot/index.html
+          test -f artifacts/publish/wwwroot/_framework/blazor.webassembly.js
+          mkdir -p artifacts
+          (cd artifacts/publish && zip -qr ../ContentManagement-win-x86.zip .)
+          unzip -l artifacts/ContentManagement-win-x86.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContentManagement-win-x86
+          path: artifacts/ContentManagement-win-x86.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop SQL Server
+        if: always()
+        run: docker compose -f Docker/docker-compose.integration.yml down --volumes --remove-orphans

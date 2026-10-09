@@ -1,10 +1,8 @@
-using ContentManagement.Configuration;
+using ContentManagement.Server.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
+builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
     .ValidateDataAnnotations()
@@ -14,14 +12,17 @@ var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error");
+    app.UseExceptionHandler();
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-app.UseAntiforgery();
-app.MapStaticAssets();
-app.MapRazorComponents<ContentManagement.Components.App>()
-    .AddInteractiveServerRenderMode();
+app.UseBlazorFrameworkFiles();
+app.UseStaticFiles();
+app.MapControllers();
+app.MapGet("/api/{**path}", () => Results.NotFound());
+app.MapFallbackToFile("index.html");
 
 app.Run();
+
+public partial class Program { }
