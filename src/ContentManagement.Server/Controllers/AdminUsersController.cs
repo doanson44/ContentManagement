@@ -103,6 +103,8 @@ public sealed class AdminUsersController(
 
         if (status == ManagedUserStatus.Active && user.Status == ManagedUserStatus.Invited && user.ActivatedUtc is null)
             return BadRequest(new { message = "The user must accept the email invitation before activation." });
+        if (status == ManagedUserStatus.Active && user.Status == ManagedUserStatus.PendingEmailVerification && user.ActivatedUtc is null)
+            return BadRequest(new { message = "The user must verify the registration email before activation." });
         if (status == ManagedUserStatus.Invited && user.Status != ManagedUserStatus.Invited)
             return BadRequest(new { message = "Send a new invitation to return a user to invited status." });
 
@@ -113,6 +115,11 @@ public sealed class AdminUsersController(
         {
             user.InvitationTokenHash = null;
             user.InvitationExpiresUtc = null;
+        }
+        if (user.Status != ManagedUserStatus.PendingEmailVerification)
+        {
+            user.RegistrationTokenHash = null;
+            user.RegistrationExpiresUtc = null;
         }
         if (user.Status == ManagedUserStatus.Active && user.ActivatedUtc is null)
             user.ActivatedUtc = DateTime.UtcNow;
