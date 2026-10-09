@@ -68,6 +68,7 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
 {
+    builder.Services.AddScoped<StaleFileCleanupJob>();
     var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfire");
     if (string.IsNullOrWhiteSpace(hangfireConnectionString))
         throw new InvalidOperationException("ConnectionStrings:Hangfire must be configured when Hangfire:Enabled is true.");
@@ -91,7 +92,6 @@ if (hangfireEnabled)
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
 builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
-builder.Services.AddScoped<StaleFileCleanupJob>();
 
 builder.Services.AddAuthentication(options =>
     {
