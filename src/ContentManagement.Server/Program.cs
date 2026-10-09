@@ -56,10 +56,7 @@ var allowedAdminEmails = builder.Configuration.GetSection("AdminAuth:AllowedEmai
 builder.Services.AddOptions<SmtpOptions>()
     .Bind(builder.Configuration.GetSection(SmtpOptions.SectionName))
     .Validate(options => options.Port is >= 1 and <= 65535, "Smtp:Port must be a valid TCP port.")
-    .Validate(options => allowedAdminEmails.Length == 0 ||
-        (!string.IsNullOrWhiteSpace(options.Host) &&
-         System.Net.Mail.MailAddress.TryCreate(options.FromEmail, out _)),
-        "Smtp:Host and a valid Smtp:FromEmail are required when admin email sign-in is enabled.")
+    .Validate(options => options.Port is >= 1 and <= 65535, "Smtp:Port must be a valid TCP port.")
     .Validate(options => string.IsNullOrWhiteSpace(options.Username) || !string.IsNullOrWhiteSpace(options.Password),
         "Smtp:Password is required when Smtp:Username is configured.")
     .ValidateOnStart();
