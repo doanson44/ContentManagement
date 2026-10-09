@@ -12,7 +12,7 @@
         <div class="brand-mark">CM</div>
         <p class="eyebrow">CONTENT MANAGEMENT</p>
         <h1>Sign in to your workspace</h1>
-        <p class="login-subtitle">Secure, passwordless access for authorized administrators.</p>
+        <p class="login-subtitle">Secure, passwordless access for invited users and administrators.</p>
     </div>
 
     @if (_signedIn)
@@ -27,12 +27,12 @@
     {
         <div class="login-card">
             <h2>Continue with email</h2>
-            <p class="muted">Enter your authorized admin email. We’ll send you a one-time code.</p>
+            <p class="muted">Enter the email address associated with your account. We’ll send you a one-time code.</p>
             <label for="email">Email address</label>
             <input id="email" type="email" autocomplete="email" maxlength="254" @bind="_email" @bind:event="oninput" placeholder="you@company.com" disabled="@_busy" />
             @if (!string.IsNullOrWhiteSpace(_message)) { <p class="form-message error">@_message</p> }
             <button class="primary-button" @onclick="RequestOtpAsync" disabled="@_busy">@(_busy ? "Sending code…" : "Continue with email")</button>
-            <p class="fine-print">Only email addresses configured by the server can sign in.</p>
+            <p class="fine-print">Administrators are configured by the server. Other users must accept an administrator invitation first.</p>
         </div>
     }
     else
