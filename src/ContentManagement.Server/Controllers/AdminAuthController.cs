@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Data;
+using ContentManagement.Server.Domain;
 using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Controllers;
