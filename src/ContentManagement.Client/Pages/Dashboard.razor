@@ -1,0 +1,139 @@
+@page "/dashboard"
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard · ContentManagement</PageTitle>
+
+@if (_checkingSession)
+{
+    <div class="dashboard-loading">Checking administrator session…</div>
+}
+else if (_signedIn)
+{
+    <div class="dashboard-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p>
+            <a class="sidebar-link active" href="/dashboard"><span>⌂</span> Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p>
+            <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>♙</span> Permissions <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+            <div class="sidebar-bottom">
+                <div class="admin-avatar">A</div>
+                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
+                <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
+            </div>
+        </aside>
+
+        <main class="dashboard-main">
+            <header class="dashboard-header">
+                <div>
+                    <p class="dashboard-eyebrow">WORKSPACE OVERVIEW</p>
+                    <h1>Dashboard</h1>
+                    <p class="dashboard-subtitle">Manage API access and your content from one place.</p>
+                </div>
+                <div class="session-pill"><span></span> Admin session active</div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="dashboard-message">@_message</div>
+            }
+
+            <section class="welcome-panel">
+                <div>
+                    <p class="welcome-kicker">CONTENT MANAGEMENT</p>
+                    <h2>Welcome to your workspace</h2>
+                    <p>Choose a management area to get started. The dashboard navigation is ready; management screens will be added incrementally.</p>
+                </div>
+                <div class="welcome-decoration" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            </section>
+
+            <div class="section-heading">
+                <div><h2>Management</h2><p>Core areas of your content platform</p></div>
+                <span class="module-count">4 modules</span>
+            </div>
+
+            <section class="module-grid" aria-label="Management modules">
+                <article class="module-card">
+                    <div class="module-icon api-icon">⌘</div>
+                    <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
+                    <p>Register applications, configure client credentials, and rotate or revoke secrets.</p>
+                    <div class="module-footer"><span>Client configuration</span><span class="module-arrow">↗</span></div>
+                </article>
+                <article class="module-card">
+                    <div class="module-icon permission-icon">♙</div>
+                    <div class="module-card-heading"><h3>Permissions</h3><span class="module-status">Planned</span></div>
+                    <p>Control which clients can read, write, or delete files and JSON documents.</p>
+                    <div class="module-footer"><span>Scopes &amp; access</span><span class="module-arrow">↗</span></div>
+                </article>
+                <article class="module-card">
+                    <div class="module-icon files-icon">▤</div>
+                    <div class="module-card-heading"><h3>File management</h3><span class="module-status">Planned</span></div>
+                    <p>Browse file metadata, inspect status, and manage stored binary content.</p>
+                    <div class="module-footer"><span>Binary assets</span><span class="module-arrow">↗</span></div>
+                </article>
+                <article class="module-card">
+                    <div class="module-icon json-icon">{ }</div>
+                    <div class="module-card-heading"><h3>JSON documents</h3><span class="module-status">Planned</span></div>
+                    <p>Manage JSON documents and their metadata, validation, and lifecycle.</p>
+                    <div class="module-footer"><span>Structured content</span><span class="module-arrow">↗</span></div>
+                </article>
+            </section>
+            <footer class="dashboard-footer">ContentManagement <span>·</span> Administrator workspace</footer>
+        </main>
+    </div>
+}
+else
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting to sign in…</div>
+}
+
+@code {
+    private bool _checkingSession = true;
+    private bool _signedIn;
+    private bool _busy;
+    private string _email = "";
+    private string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/auth/me");
+            if (response.IsSuccessStatusCode)
+            {
+                var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
+                _email = session?.Email ?? "";
+                _signedIn = !string.IsNullOrWhiteSpace(_email);
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server."; }
+        finally { _checkingSession = false; }
+
+        if (!_signedIn && string.IsNullOrEmpty(_message))
+            Navigation.NavigateTo("/", replace: true);
+    }
+
+    private async Task LogoutAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var response = await Http.PostAsync("api/auth/logout", null);
+            if (response.IsSuccessStatusCode)
+                Navigation.NavigateTo("/", forceLoad: true, replace: true);
+            else
+                _message = "Unable to sign out. Please try again.";
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server. Please try again."; }
+        finally { _busy = false; }
+    }
+
+    private sealed record SessionResponse(string Email);
+}
