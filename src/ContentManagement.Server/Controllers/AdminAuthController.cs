@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
@@ -34,7 +35,10 @@ public sealed class AdminAuthController(
 
         var email = address.Address.ToLowerInvariant();
         var options = adminOptions.Value;
-        if (!options.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
+        var isAdministrator = options.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
+        var managedUser = isAdministrator ? null : await db.ManagedUsers
+            .SingleOrDefaultAsync(user => user.Email == email && user.Status == ManagedUserStatus.Active, cancellationToken);
+        if (!isAdministrator && managedUser is null)
         {
             // Keep the response generic to avoid disclosing which addresses are registered.
             return Accepted(new { message = "If this address is eligible, a sign-in code will be sent." });
@@ -87,7 +91,10 @@ public sealed class AdminAuthController(
             return BadRequest(new { message = "Enter the email and six-digit code." });
 
         var email = request.Email.Trim().ToLowerInvariant();
-        if (!adminOptions.Value.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
+        var isAdministrator = adminOptions.Value.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
+        var managedUser = isAdministrator ? null : await db.ManagedUsers
+            .SingleOrDefaultAsync(user => user.Email == email && user.Status == ManagedUserStatus.Active, cancellationToken);
+        if (!isAdministrator && managedUser is null)
             return Unauthorized(new { message = "The code is invalid or expired." });
 
         var challenge = await db.AdminOtpChallenges
@@ -111,13 +118,62 @@ public sealed class AdminAuthController(
         challenge.ConsumedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
-        var claims = new[]
+        if (managedUser is not null)
         {
-            new Claim(ClaimTypes.NameIdentifier, email),
-            new Claim(ClaimTypes.Email, email),
-            new Claim(ClaimTypes.Name, email),
-            new Claim(ClaimTypes.Role, "Administrator")
+            managedUser.LastLoginUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        await SignInUserAsync(email, isAdministrator, managedUser?.PermissionsJson, cancellationToken);
+        return Ok(new { email });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("accept-invitation")]
+    [EnableRateLimiting("invitation-accept")]
+    public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token) || request.Token.Length > 256)
+            return Unauthorized(new { message = "The invitation is invalid or expired." });
+
+        var tokenHash = HashToken(request.Token);
+        var user = await db.ManagedUsers.SingleOrDefaultAsync(
+            candidate => candidate.InvitationTokenHash == tokenHash &&
+                         candidate.Status == ManagedUserStatus.Invited,
+            cancellationToken);
+
+        if (user is null || user.InvitationExpiresUtc is null || user.InvitationExpiresUtc <= DateTime.UtcNow)
+            return Unauthorized(new { message = "The invitation is invalid or expired." });
+
+        user.Status = ManagedUserStatus.Active;
+        user.InvitationTokenHash = null;
+        user.InvitationExpiresUtc = null;
+        user.ActivatedUtc = DateTime.UtcNow;
+        user.UpdatedUtc = DateTime.UtcNow;
+        user.LastLoginUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        await SignInUserAsync(user.Email, false, user.PermissionsJson, cancellationToken);
+        logger.LogInformation("Managed user {UserId} accepted an invitation.", user.Id);
+        return Ok(new { email = user.Email });
+    }
+
+    private async Task SignInUserAsync(string email, bool isAdministrator, string? permissionsJson, CancellationToken cancellationToken)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, email),
+            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Name, email),
+            new(ClaimTypes.Role, isAdministrator ? "Administrator" : "User")
         };
+
+        if (!isAdministrator && !string.IsNullOrWhiteSpace(permissionsJson))
+        {
+            var permissions = JsonSerializer.Deserialize<string[]>(permissionsJson) ?? [];
+            claims.AddRange(permissions.Distinct(StringComparer.Ordinal).Select(permission => new Claim("scope", permission)));
+        }
+
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
@@ -127,7 +183,6 @@ public sealed class AdminAuthController(
                 AllowRefresh = true,
                 ExpiresUtc = DateTimeOffset.UtcNow.AddHours(adminOptions.Value.SessionLifetimeHours)
             });
-        return Ok(new { email });
     }
 
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
@@ -142,9 +197,13 @@ public sealed class AdminAuthController(
         return NoContent();
     }
 
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
     private static string HashOtp(string email, string code, string key) =>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes($"{email}:{code}")));
 
     public sealed record RequestOtpRequest(string Email);
     public sealed record VerifyOtpRequest(string Email, string Code);
+    public sealed record AcceptInvitationRequest(string Token);
 }
