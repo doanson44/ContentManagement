@@ -17,15 +17,21 @@ else if (_signedIn)
             <p class="sidebar-label">WORKSPACE</p>
             <a class="sidebar-link active" href="/dashboard"><span>⌂</span> Dashboard</a>
             <p class="sidebar-label">MANAGEMENT</p>
-            <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
+            @if (_isAdministrator)
+            {
+                <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
+            }
             <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
-            <p class="sidebar-label">SYSTEM</p>
-            <a class="sidebar-link" href="/dashboard/setup"><span>⚙</span> Setup</a>
+            @if (_isAdministrator)
+            {
+                <p class="sidebar-label">SYSTEM</p>
+                <a class="sidebar-link" href="/dashboard/setup"><span>⚙</span> Setup</a>
+            }
             <div class="sidebar-bottom">
-                <div class="admin-avatar">A</div>
-                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
+                <div class="admin-avatar">@(_isAdministrator ? "A" : "U")</div>
+                <div class="admin-identity"><strong>@(_isAdministrator ? "Administrator" : "User")</strong><span>@_email</span></div>
                 <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
             </div>
         </aside>
@@ -63,16 +69,19 @@ else if (_signedIn)
 
             <div class="section-heading">
                 <div><h2>Management</h2><p>Core areas of your content platform</p></div>
-                <span class="module-count">4 modules</span>
+                <span class="module-count">@(_isAdministrator ? 4 : 3) modules</span>
             </div>
 
             <section class="module-grid" aria-label="Management modules">
+                @if (_isAdministrator)
+                {
                 <article class="module-card">
                     <div class="module-icon permission-icon">♙</div>
                     <div class="module-card-heading"><h3>User management</h3><span class="module-status">Available</span></div>
                     <p>Invite users, assign content permissions, and activate or disable accounts.</p>
                     <div class="module-footer"><span><a href="/dashboard/users">Manage users</a></span><span class="module-arrow">↗</span></div>
                 </article>
+                }
                 <article class="module-card">
                     <div class="module-icon api-icon">⌘</div>
                     <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
