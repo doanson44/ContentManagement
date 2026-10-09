@@ -18,6 +18,11 @@ public sealed class SmtpEmailSender(
             $"You have been invited to ContentManagement. Accept your invitation using this link (valid for 48 hours):\n\n{invitationUrl}\n\nIf you were not expecting this invitation, you can ignore this email.",
             cancellationToken);
 
+    public Task SendVerificationLinkAsync(string email, string verificationUrl, CancellationToken cancellationToken) =>
+        SendAsync(email, "Verify your ContentManagement account",
+            $"Complete your ContentManagement registration using this link (valid for 24 hours):\n\n{verificationUrl}\n\nIf you did not request an account, you can ignore this email.",
+            cancellationToken);
+
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
         var configured = options.Value;
