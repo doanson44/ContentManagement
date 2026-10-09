@@ -40,6 +40,8 @@ Configure an explicit allowlist and a random HMAC key (at least 32 characters) t
 ```powershell
 $env:AdminAuth__AllowedEmails__0 = "admin@your-domain.example"
 $env:AdminAuth__OtpHashKey = "<at-least-32-character-random-secret>"
+# Optional only if the admin UI is intentionally hosted on another HTTPS origin:
+$env:AdminAuth__AllowedOrigins__0 = "https://admin.your-domain.example"
 $env:Smtp__Host = "smtp.your-provider.example"
 $env:Smtp__Port = "587"
 $env:Smtp__UseSsl = "true"
@@ -49,7 +51,7 @@ $env:Smtp__FromEmail = "noreply@your-domain.example"
 $env:Authentication__ApiKey = "<server-to-server-api-key>"
 ```
 
-The OTP challenge is persisted in SQL Server. OTPs expire, are one-time-use, are stored as keyed hashes, have a verification-attempt limit, and requests are rate limited. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
+The OTP challenge is persisted in SQL Server. OTPs expire, are one-time-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. Unsafe requests without the API-key header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
 
 Apply the new migration during a planned deployment after backing up the database:
 
@@ -57,7 +59,7 @@ Apply the new migration during a planned deployment after backing up the databas
 dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
 ```
 
-The migration is `202610090002_AddAdminOtpChallenges`. Configure the allowlist only for trusted administrators. This first increment provides sign-in and sign-out; role management, audit trail, email delivery observability, cross-instance distributed rate limiting, and CSRF-token enforcement for cookie-authenticated state-changing endpoints remain follow-up hardening tasks. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
+The migration is `202610090002_AddAdminOtpChallenges`. Configure the allowlist only for trusted administrators. This first increment provides sign-in and sign-out; role management, audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
 
 ## Requirements
 
