@@ -25,6 +25,7 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
+builder.Services.AddDataProtection();
 
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
@@ -93,6 +94,11 @@ if (hangfireEnabled)
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
 builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IEmailJobQueue>(services => hangfireEnabled
+    ? new HangfireEmailJobQueue(
+        services.GetRequiredService<Hangfire.IBackgroundJobClient>(),
+        services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>())
+    : new UnavailableEmailJobQueue());
 
 builder.Services.AddAuthentication(options =>
     {
