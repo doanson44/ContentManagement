@@ -129,6 +129,111 @@ public sealed class AdminAuthController(
     }
 
     [AllowAnonymous]
+    [HttpPost("request-registration")]
+    [EnableRateLimiting("registration-request")]
+    public async Task<IActionResult> RequestRegistration([FromBody] RequestRegistrationRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 ||
+            !System.Net.Mail.MailAddress.TryCreate(request.Email.Trim(), out var address) ||
+            !string.Equals(address.Address, request.Email.Trim(), StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Enter a valid email address." });
+
+        var email = address.Address.ToLowerInvariant();
+        var genericResponse = Accepted(new { message = "If this address can be registered, a verification link will be sent." });
+        if (adminOptions.Value.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
+            return genericResponse;
+
+        var user = await db.ManagedUsers.SingleOrDefaultAsync(candidate => candidate.Email == email, cancellationToken);
+        if (user is not null && user.Status != ManagedUserStatus.PendingEmailVerification)
+            return genericResponse;
+
+        var now = DateTime.UtcNow;
+        var token = CreateSecureToken();
+        if (user is null)
+        {
+            user = new ManagedUser
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                Status = ManagedUserStatus.PendingEmailVerification,
+                PermissionsJson = "[]",
+                CreatedUtc = now
+            };
+            db.ManagedUsers.Add(user);
+        }
+
+        user.Status = ManagedUserStatus.PendingEmailVerification;
+        user.PermissionsJson = "[]";
+        user.RegistrationTokenHash = HashToken(token);
+        user.RegistrationExpiresUtc = now.AddHours(24);
+        user.UpdatedUtc = now;
+        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            var baseUrl = adminOptions.Value.PublicBaseUrl.TrimEnd('/');
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException("AdminAuth:PublicBaseUrl must be configured as an absolute HTTPS URL before sending registration links.");
+
+            emailJobQueue.EnqueueRegistrationVerification(
+                email, $"{baseUrl}/register/confirm?token={Uri.EscapeDataString(token)}");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Unable to queue account verification email.");
+            user.RegistrationTokenHash = null;
+            user.RegistrationExpiresUtc = null;
+            user.UpdatedUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Email delivery is temporarily unavailable.");
+        }
+
+        return genericResponse;
+    }
+
+    [AllowAnonymous]
+    [HttpPost("confirm-registration")]
+    [EnableRateLimiting("registration-confirm")]
+    public async Task<IActionResult> ConfirmRegistration([FromBody] ConfirmRegistrationRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token) || request.Token.Length > 256)
+            return Unauthorized(new { message = "The registration link is invalid or expired." });
+
+        var tokenHash = HashToken(request.Token);
+        var user = await db.ManagedUsers.SingleOrDefaultAsync(candidate =>
+            candidate.RegistrationTokenHash == tokenHash &&
+            candidate.Status == ManagedUserStatus.PendingEmailVerification, cancellationToken);
+        var now = DateTime.UtcNow;
+        if (user is null || user.RegistrationExpiresUtc is null || user.RegistrationExpiresUtc <= now)
+            return Unauthorized(new { message = "The registration link is invalid or expired." });
+
+        var consumed = await db.ManagedUsers
+            .Where(candidate => candidate.Id == user.Id &&
+                                candidate.RegistrationTokenHash == tokenHash &&
+                                candidate.Status == ManagedUserStatus.PendingEmailVerification &&
+                                candidate.RegistrationExpiresUtc > now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(candidate => candidate.Status, ManagedUserStatus.Active)
+                .SetProperty(candidate => candidate.RegistrationTokenHash, (string?)null)
+                .SetProperty(candidate => candidate.RegistrationExpiresUtc, (DateTime?)null)
+                .SetProperty(candidate => candidate.ActivatedUtc, now)
+                .SetProperty(candidate => candidate.UpdatedUtc, now)
+                .SetProperty(candidate => candidate.LastLoginUtc, now),
+                cancellationToken);
+        if (consumed != 1)
+            return Unauthorized(new { message = "The registration link is invalid, expired, or already used." });
+
+        await SignInUserAsync(user.Email, false, "[]", cancellationToken);
+        logger.LogInformation("Self-service registration completed for managed user {UserId}.", user.Id);
+        return Ok(new { email = user.Email });
+    }
+
+    private static string CreateSecureToken() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    [AllowAnonymous]
     [HttpPost("accept-invitation")]
     [EnableRateLimiting("invitation-accept")]
     public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationRequest request, CancellationToken cancellationToken)
@@ -218,6 +323,8 @@ public sealed class AdminAuthController(
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes($"{email}:{code}")));
 
     public sealed record RequestOtpRequest(string Email);
+    public sealed record RequestRegistrationRequest(string Email);
+    public sealed record ConfirmRegistrationRequest(string Token);
     public sealed record VerifyOtpRequest(string Email, string Code);
     public sealed record AcceptInvitationRequest(string Token);
 }
