@@ -119,7 +119,7 @@ Before production use, configure external SQL Server connectivity, a persistent 
 
 ### SMTP email delivery
 
-SMTP is already used by the administrator OTP flow. Configure `Smtp:Host`, `Smtp:Port`, `Smtp:UseSsl`, and `Smtp:FromEmail`; if the provider requires authentication, set both `Smtp:Username` and `Smtp:Password`. Set `AdminAuth:AllowedEmails` only after SMTP has been tested. When at least one admin email is allowlisted, startup validates that the SMTP host and sender address are configured. Store passwords in environment variables or a secret manager, not in committed settings.
+SMTP is already used by the administrator OTP flow. Configure `Smtp:Host`, `Smtp:Port`, `Smtp:UseSsl`, `Smtp:FromEmail`, and optionally `Smtp:FromName`; if the provider requires authentication, set both `Smtp:Username` and `Smtp:Password`. Set `AdminAuth:AllowedEmails` only after SMTP has been tested. SMTP values are read from `appsettings.json` and standard .NET configuration providers. Use environment variables or a secret manager for production credentials; do not commit real passwords.
 
 ### Serilog
 
@@ -139,11 +139,7 @@ Use a dedicated database/login with least-privilege access and a valid trusted S
 
 ### Dashboard setup
 
-After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to configure SMTP, send a test email, and set stale-file cleanup policy.
-
-SMTP configuration is stored in the SQL Server `SystemSettings` row and used for OTP and test email delivery. The API does not return the saved password; leave the password field blank to retain the existing value. In this initial version, the SMTP password is stored without application-level encryption, so restrict database access and backups.
-
-For direct database setup, edit the placeholders in [`scripts/setup-email-config.sql`](scripts/setup-email-config.sql) and run it against the application database after applying migration `202610090003_AddSystemSettings`. The script upserts the singleton settings row, preserves the cleanup defaults (90-day stale age, 24-hour interval, 7-day grace period), and prints only non-secret configuration fields for verification. Do not put real SMTP credentials in a committed script.
+After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to test SMTP delivery and set the stale-file cleanup policy. Configure SMTP through the server's `Smtp` section in `appsettings.json` or environment variables; the dashboard does not persist email configuration to SQL Server.
 
 Default cleanup policy: files older than 90 days are eligible, the worker checks every 24 hours, and marked files wait 7 days before deletion. Hangfire polls hourly and runs when the configured interval has elapsed. The worker marks eligible files first and deletes the binary plus metadata only after the grace period. Each run is bounded to 500 marked files and 100 deletions. Cleanup runs only when Hangfire is enabled and configured.
 
