@@ -19,7 +19,7 @@ namespace ContentManagement.Server.Controllers;
 [Route("api/auth")]
 public sealed class AdminAuthController(
     ContentManagementDbContext db,
-    IEmailSender emailSender,
+    IEmailJobQueue emailJobQueue,
     IOptions<AdminAuthOptions> adminOptions,
     ILogger<AdminAuthController> logger) : ControllerBase
 {
@@ -67,7 +67,7 @@ public sealed class AdminAuthController(
 
         try
         {
-            await emailSender.SendOtpAsync(email, code, cancellationToken);
+            emailJobQueue.EnqueueOtp(email, code);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
