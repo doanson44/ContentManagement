@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +24,7 @@ public sealed class AdminAuthController(
 {
     [AllowAnonymous]
     [HttpPost("request-otp")]
+    [EnableRateLimiting("otp-request")]
     public async Task<IActionResult> RequestOtp([FromBody] RequestOtpRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 ||
@@ -77,6 +79,7 @@ public sealed class AdminAuthController(
 
     [AllowAnonymous]
     [HttpPost("verify-otp")]
+    [EnableRateLimiting("otp-verify")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Code) ||
