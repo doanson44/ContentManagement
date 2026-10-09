@@ -145,13 +145,22 @@ public sealed class AdminAuthController(
         if (user is null || user.InvitationExpiresUtc is null || user.InvitationExpiresUtc <= DateTime.UtcNow)
             return Unauthorized(new { message = "The invitation is invalid or expired." });
 
-        user.Status = ManagedUserStatus.Active;
-        user.InvitationTokenHash = null;
-        user.InvitationExpiresUtc = null;
-        user.ActivatedUtc = DateTime.UtcNow;
-        user.UpdatedUtc = DateTime.UtcNow;
-        user.LastLoginUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        var consumed = await db.ManagedUsers
+            .Where(candidate => candidate.Id == user.Id &&
+                                candidate.InvitationTokenHash == tokenHash &&
+                                candidate.Status == ManagedUserStatus.Invited &&
+                                candidate.InvitationExpiresUtc > now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(candidate => candidate.Status, ManagedUserStatus.Active)
+                .SetProperty(candidate => candidate.InvitationTokenHash, (string?)null)
+                .SetProperty(candidate => candidate.InvitationExpiresUtc, (DateTime?)null)
+                .SetProperty(candidate => candidate.ActivatedUtc, now)
+                .SetProperty(candidate => candidate.UpdatedUtc, now)
+                .SetProperty(candidate => candidate.LastLoginUtc, now),
+                cancellationToken);
+        if (consumed != 1)
+            return Unauthorized(new { message = "The invitation is invalid or expired." });
 
         await SignInUserAsync(user.Email, false, user.PermissionsJson, cancellationToken);
         logger.LogInformation("Managed user {UserId} accepted an invitation.", user.Id);
