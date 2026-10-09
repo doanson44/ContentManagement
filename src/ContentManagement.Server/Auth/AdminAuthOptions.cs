@@ -9,4 +9,5 @@ public sealed class AdminAuthOptions
     public int MaxVerificationAttempts { get; set; } = 5;
     public int ResendCooldownSeconds { get; set; } = 60;
     public int SessionLifetimeHours { get; set; } = 8;
+    public string[] AllowedOrigins { get; set; } = [];
 }
