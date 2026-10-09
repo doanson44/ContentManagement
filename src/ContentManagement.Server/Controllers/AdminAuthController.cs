@@ -53,7 +53,7 @@ public sealed class AdminAuthController(
         {
             Id = Guid.NewGuid(),
             Email = email,
-            CodeHash = HashOtp(email, code),
+            CodeHash = HashOtp(email, code, options.OtpHashKey),
             CreatedUtc = now,
             ExpiresUtc = now.AddMinutes(options.OtpLifetimeMinutes),
             LastSentUtc = now
@@ -99,7 +99,7 @@ public sealed class AdminAuthController(
             challenge.FailedAttempts >= adminOptions.Value.MaxVerificationAttempts)
             return Unauthorized(new { message = "The code is invalid or expired." });
 
-        var submittedHash = Convert.FromHexString(HashOtp(email, request.Code));
+        var submittedHash = Convert.FromHexString(HashOtp(email, request.Code, adminOptions.Value.OtpHashKey));
         var expectedHash = Convert.FromHexString(challenge.CodeHash);
         if (!CryptographicOperations.FixedTimeEquals(submittedHash, expectedHash))
         {
@@ -142,8 +142,8 @@ public sealed class AdminAuthController(
         return NoContent();
     }
 
-    private static string HashOtp(string email, string code) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{email}:{code}")));
+    private static string HashOtp(string email, string code, string key) =>
+        Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes($"{email}:{code}")));
 
     public sealed record RequestOtpRequest(string Email);
     public sealed record VerifyOtpRequest(string Email, string Code);
