@@ -35,6 +35,8 @@ builder.Services.AddOptions<AdminAuthOptions>()
     .Validate(options => options.MaxVerificationAttempts is >= 3 and <= 10)
     .Validate(options => options.ResendCooldownSeconds is >= 30 and <= 600)
     .Validate(options => options.SessionLifetimeHours is >= 1 and <= 24)
+    .Validate(options => options.AllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out var parsed) && parsed.Scheme == Uri.UriSchemeHttps),
+        "AdminAuth:AllowedOrigins must contain absolute HTTPS origins.")
     .Validate(options => options.AllowedEmails.Length == 0 || options.OtpHashKey.Length >= 32,
         "AdminAuth:OtpHashKey must contain at least 32 characters when admin email sign-in is enabled.")
     .ValidateOnStart();
@@ -130,6 +132,29 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    var method = context.Request.Method;
+    var isUnsafeMethod = HttpMethods.IsPost(method) || HttpMethods.IsPut(method) ||
+        HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+    var hasApiKey = context.Request.Headers.ContainsKey(ApiKeyAuthenticationDefaults.HeaderName);
+    if (isUnsafeMethod && !hasApiKey)
+    {
+        var originHeader = context.Request.Headers.Origin.ToString();
+        var allowedOrigins = builder.Configuration.GetSection("AdminAuth:AllowedOrigins").Get<string[]>() ?? [];
+        var requestOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
+        var originIsAllowed = Uri.TryCreate(originHeader, UriKind.Absolute, out var origin) &&
+            (string.Equals(origin.GetLeftPart(UriPartial.Authority), requestOrigin, StringComparison.OrdinalIgnoreCase) ||
+             allowedOrigins.Contains(origin.GetLeftPart(UriPartial.Authority), StringComparer.OrdinalIgnoreCase));
+        if (!originIsAllowed)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { message = "Request origin is not allowed." });
+            return;
+        }
+    }
+    await next();
+});
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRateLimiter();
