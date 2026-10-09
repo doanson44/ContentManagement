@@ -161,12 +161,22 @@ builder.Services.AddAuthentication(options =>
                 return;
             }
 
+            var permissions = (System.Text.Json.JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [])
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(permission => permission, StringComparer.Ordinal)
+                .ToArray();
+            var currentPermissions = principal.FindAll("scope")
+                .Select(claim => claim.Value)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(permission => permission, StringComparer.Ordinal)
+                .ToArray();
+            if (currentPermissions.SequenceEqual(permissions, StringComparer.Ordinal))
+                return;
+
             var claims = principal.Claims
                 .Where(claim => claim.Type != "scope")
                 .ToList();
-            var permissions = System.Text.Json.JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [];
-            claims.AddRange(permissions.Distinct(StringComparer.Ordinal)
-                .Select(permission => new System.Security.Claims.Claim("scope", permission)));
+            claims.AddRange(permissions.Select(permission => new System.Security.Claims.Claim("scope", permission)));
             var identity = new System.Security.Claims.ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             context.ReplacePrincipal(new System.Security.Claims.ClaimsPrincipal(identity));
             context.ShouldRenew = true;
