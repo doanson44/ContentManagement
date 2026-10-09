@@ -61,8 +61,10 @@ public sealed class StaleFileCleanupJob(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                logger.LogError(exception, "Failed to clean stale file {FileId}; it remains available for a later retry.", file.Id);
-                db.Entry(file).State = EntityState.Unchanged;
+                logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the grace period.", file.Id);
+                file.Status = ContentStatus.MarkedForDeletion;
+                file.UpdatedUtc = DateTime.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
             }
         }
 
