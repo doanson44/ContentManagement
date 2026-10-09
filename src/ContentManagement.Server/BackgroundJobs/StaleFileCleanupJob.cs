@@ -64,6 +64,7 @@ public sealed class StaleFileCleanupJob(
                 logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the grace period.", file.Id);
                 file.Status = ContentStatus.MarkedForDeletion;
                 file.UpdatedUtc = DateTime.UtcNow;
+                db.Entry(file).State = EntityState.Modified;
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
