@@ -5,6 +5,7 @@
 @using System.Text.Json
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 <PageTitle>Files · ContentManagement</PageTitle>
 
@@ -51,7 +52,7 @@ else
                             else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
                             else if (IsVideo(_selected.ContentType)) {
                                 <video class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)"><track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /></video>
-                                <div class="subtitle-panel"><strong>Subtitles</strong><p>Upload a WebVTT (.vtt) subtitle file to use the browser subtitle track.</p><label class="files-secondary subtitle-upload">Upload .vtt<InputFile OnChange="UploadSubtitleAsync" accept=".vtt,text/vtt" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
+                                <div class="subtitle-panel"><strong>Subtitles</strong><p>Choose a WebVTT (.vtt) subtitle file from this device for the current preview. It is not saved to the server.</p><label class="files-secondary subtitle-upload">Upload .vtt<InputFile OnChange="UploadSubtitleAsync" accept=".vtt,text/vtt" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
                             }
                             else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
                             else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
@@ -119,8 +120,27 @@ else
         finally{_busy=false;}
     }
     private async Task UploadSubtitleAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
-        _subtitleMessage="Subtitle upload endpoint is not implemented yet.";
-        await Task.CompletedTask;
+        if (_selected is null || !IsVideo(_selected.ContentType)) return;
+        var file=args.File;
+        if (!file.Name.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(file.ContentType) && file.ContentType != "text/vtt" && file.ContentType != "application/octet-stream")) {
+            _subtitleMessage="Only WebVTT (.vtt) subtitles are supported.";
+            return;
+        }
+        if (file.Size > 1024 * 1024) { _subtitleMessage="Subtitle file must be 1 MiB or smaller."; return; }
+        try {
+            await using var stream=file.OpenReadStream(1024*1024);
+            using var reader=new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks:true);
+            var text=await reader.ReadToEndAsync();
+            if (!text.TrimStart().StartsWith("WEBVTT", StringComparison.Ordinal)) {
+                _subtitleMessage="Invalid WebVTT file. The file must begin with WEBVTT.";
+                return;
+            }
+            _subtitleUrl=await JS.InvokeAsync<string>("contentManagementFiles.createSubtitleUrl", text);
+            _subtitleMessage="Subtitle loaded for this preview.";
+        } catch(Exception ex) when(ex is IOException or Microsoft.JSInterop.JSException) {
+            _subtitleMessage="Unable to load subtitle file.";
+        }
     }
     private async Task RenameAsync() {
         if(_selected is null) return; _busy=true;
@@ -132,7 +152,7 @@ else
         try { using var response=await Http.DeleteAsync($"api/files/{_selected.Id}"); if(response.IsSuccessStatusCode){_message="File marked for deletion.";_selected=null;await LoadAsync();}else _message="Unable to delete file."; }
         catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
     }
-    private Task<bool> ConfirmDeleteAsync() { _message="Delete confirmation is required before proceeding. Use the browser confirmation in the next update."; return Task.FromResult(false); }
+    private async Task<bool> ConfirmDeleteAsync() => await JS.InvokeAsync<bool>("confirm", "Mark this file for deletion? It will be removed by the cleanup job after the grace period.");
     private async Task SearchKeyDown(KeyboardEventArgs e) { if(e.Key=="Enter"){_page=1;await LoadAsync();} }
     private async Task PreviousAsync(){if(_page>1){_page--;await LoadAsync();}}
     private async Task NextAsync(){if(_page*_pageSize<_total){_page++;await LoadAsync();}}
