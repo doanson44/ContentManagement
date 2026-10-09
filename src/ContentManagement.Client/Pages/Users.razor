@@ -1,0 +1,231 @@
+@page "/dashboard/users"
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Users · ContentManagement</PageTitle>
+
+@if (_loading)
+{
+    <div class="dashboard-loading">Loading users…</div>
+}
+else if (_signedIn)
+{
+    <div class="dashboard-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p>
+            <a class="sidebar-link" href="/dashboard"><span>⌂</span> Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p>
+            <a class="sidebar-link active" href="/dashboard/users"><span>♙</span> Users</a>
+            <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+            <p class="sidebar-label">SYSTEM</p>
+            <a class="sidebar-link" href="/dashboard/setup"><span>⚙</span> Setup</a>
+            <div class="sidebar-bottom"><div class="admin-avatar">A</div><div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div><button class="logout-button" title="Sign out" @onclick="LogoutAsync">↗</button></div>
+        </aside>
+        <main class="dashboard-main">
+            <header class="dashboard-header">
+                <div><p class="dashboard-eyebrow">ACCESS MANAGEMENT</p><h1>Users</h1><p class="dashboard-subtitle">Invite users and manage their permissions.</p></div>
+                <div class="session-pill"><span></span> Admin session active</div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_message)) { <div class="setup-notice @(_error ? "error" : "success")" role="status">@_message</div> }
+
+            <section class="setup-card user-invite-card">
+                <div class="setup-section-heading"><div class="setup-section-icon permission-icon">+</div><div><h2>Invite user</h2><p>Invitations expire after 48 hours. Users receive only the permissions selected here.</p></div></div>
+                <div class="setup-form-grid">
+                    <label>Email address<input type="email" maxlength="254" @bind="_inviteEmail" placeholder="user@company.com" disabled="@_busy" /></label>
+                </div>
+                <p class="permission-group-label">Initial permissions</p>
+                <div class="permission-grid">
+                    @foreach (var permission in PermissionOptions)
+                    {
+                        <label class="permission-option"><input type="checkbox" checked="@_invitePermissions.Contains(permission)" @onchange="args => TogglePermission(_invitePermissions, permission, args.Value is true)" disabled="@_busy" /> @permission</label>
+                    }
+                </div>
+                <div class="setup-actions"><button class="setup-primary" @onclick="InviteAsync" disabled="@_busy">@(_busy ? "Sending invitation…" : "Send invitation")</button></div>
+            </section>
+
+            <section class="setup-card users-table-card">
+                <div class="setup-section-heading"><div><h2>Managed users</h2><p>@_users.Count user record(s)</p></div><button class="secondary-button compact-button" @onclick="LoadUsersAsync" disabled="@_busy">Refresh</button></div>
+                @if (_users.Count == 0)
+                {
+                    <p class="muted">No invited or managed users yet.</p>
+                }
+                else
+                {
+                    <div class="users-table-wrap"><table class="users-table">
+                        <thead><tr><th>Email</th><th>Status</th><th>Permissions</th><th>Last active</th><th>Actions</th></tr></thead>
+                        <tbody>
+                        @foreach (var user in _users)
+                        {
+                            <tr @key="user.Id">
+                                <td>@user.Email</td>
+                                <td><span class="user-status status-@user.Status.ToString().ToLowerInvariant()">@user.Status</span></td>
+                                <td>@(user.Permissions.Length == 0 ? "None" : string.Join(", ", user.Permissions))</td>
+                                <td>@(user.LastLoginUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                                <td class="user-actions">
+                                    <button class="table-action" @onclick="() => BeginEdit(user)" disabled="@_busy">Edit</button>
+                                    @if (user.Status == "Invited") { <button class="table-action" @onclick="() => ResendAsync(user)" disabled="@_busy">Resend invite</button> }
+                                </td>
+                            </tr>
+                            @if (_editingId == user.Id)
+                            {
+                                <tr class="user-edit-row"><td colspan="5">
+                                    <h3>Edit @user.Email</h3>
+                                    <label>Status<select @bind="_editStatus"><option value="Active">Active</option><option value="Disabled">Disabled</option><option value="Invited">Invited</option></select></label>
+                                    <div class="permission-grid">
+                                        @foreach (var permission in PermissionOptions)
+                                        {
+                                            <label class="permission-option"><input type="checkbox" checked="@_editPermissions.Contains(permission)" @onchange="args => TogglePermission(_editPermissions, permission, args.Value is true)" disabled="@_busy" /> @permission</label>
+                                        }
+                                    </div>
+                                    <div class="setup-actions"><button class="setup-primary" @onclick="SaveEditAsync" disabled="@_busy">Save changes</button><button class="secondary-button compact-button" @onclick="CancelEdit" disabled="@_busy">Cancel</button></div>
+                                </td></tr>
+                            }
+                        }
+                        </tbody>
+                    </table></div>
+                }
+            </section>
+            <footer class="dashboard-footer">ContentManagement <span>·</span> User access management</footer>
+        </main>
+    </div>
+}
+else
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting to sign in…</div>
+}
+
+@code {
+    private static readonly string[] PermissionOptions = ["files.read", "files.write", "files.delete", "json.read", "json.write", "json.delete"];
+    private readonly List<UserRow> _users = [];
+    private readonly HashSet<string> _invitePermissions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _editPermissions = new(StringComparer.Ordinal);
+    private bool _loading = true;
+    private bool _signedIn;
+    private bool _busy;
+    private bool _error;
+    private string _email = "";
+    private string _inviteEmail = "";
+    private string _editStatus = "Active";
+    private string _message = "";
+    private Guid? _editingId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var sessionResponse = await Http.GetAsync("api/auth/me");
+            if (!sessionResponse.IsSuccessStatusCode) { Navigation.NavigateTo("/", replace: true); return; }
+            var session = await sessionResponse.Content.ReadFromJsonAsync<SessionResponse>();
+            _email = session?.Email ?? "";
+            _signedIn = !string.IsNullOrWhiteSpace(_email);
+            if (!_signedIn) { Navigation.NavigateTo("/", replace: true); return; }
+            await LoadUsersAsync();
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/admin/users");
+            if (!response.IsSuccessStatusCode) { SetMessage(response.StatusCode == System.Net.HttpStatusCode.Forbidden ? "Administrator permission is required to manage users." : "Unable to load users.", true); return; }
+            var users = await response.Content.ReadFromJsonAsync<List<UserRow>>();
+            _users.Clear();
+            _users.AddRange(users ?? []);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+    }
+
+    private async Task InviteAsync()
+    {
+        if (_busy) return;
+        if (!System.Net.Mail.MailAddress.TryCreate(_inviteEmail.Trim(), out var address) || !string.Equals(address.Address, _inviteEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+        { SetMessage("Enter a valid email address.", true); return; }
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/admin/users/invite", new { Email = _inviteEmail.Trim(), Permissions = _invitePermissions.ToArray() });
+            if (!response.IsSuccessStatusCode) { SetMessage(await ErrorMessageAsync(response), true); return; }
+            _inviteEmail = "";
+            _invitePermissions.Clear();
+            SetMessage("Invitation email sent.", false);
+            await LoadUsersAsync();
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task ResendAsync(UserRow user)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsync($"api/admin/users/{user.Id}/resend-invitation", null);
+            if (!response.IsSuccessStatusCode) { SetMessage(await ErrorMessageAsync(response), true); return; }
+            SetMessage($"Invitation resent to {user.Email}.", false);
+            await LoadUsersAsync();
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private void BeginEdit(UserRow user)
+    {
+        _editingId = user.Id;
+        _editStatus = user.Status;
+        _editPermissions.Clear();
+        foreach (var permission in user.Permissions) _editPermissions.Add(permission);
+    }
+
+    private void CancelEdit() => _editingId = null;
+
+    private async Task SaveEditAsync()
+    {
+        if (_busy || _editingId is null) return;
+        var user = _users.SingleOrDefault(x => x.Id == _editingId.Value);
+        if (user is null) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PutAsJsonAsync($"api/admin/users/{user.Id}", new { Status = _editStatus, Permissions = _editPermissions.ToArray() });
+            if (!response.IsSuccessStatusCode) { SetMessage(await ErrorMessageAsync(response), true); return; }
+            _editingId = null;
+            SetMessage("User updated.", false);
+            await LoadUsersAsync();
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        using var response = await Http.PostAsync("api/auth/logout", null);
+        if (response.IsSuccessStatusCode) Navigation.NavigateTo("/", forceLoad: true, replace: true);
+    }
+
+    private static void TogglePermission(HashSet<string> permissions, string permission, bool enabled)
+    {
+        if (enabled) permissions.Add(permission); else permissions.Remove(permission);
+    }
+
+    private void SetMessage(string message, bool error) { _message = message; _error = error; }
+
+    private static async Task<string> ErrorMessageAsync(HttpResponseMessage response)
+    {
+        try { var result = await response.Content.ReadFromJsonAsync<ApiMessage>(); return result?.Message ?? result?.Title ?? "Request failed."; }
+        catch { return "Request failed."; }
+    }
+
+    private sealed record SessionResponse(string Email);
+    private sealed record ApiMessage(string? Message, string? Title);
+    private sealed record UserRow(Guid Id, string Email, string Status, string[] Permissions, DateTime CreatedUtc,
+        DateTime? InvitedUtc, DateTime? InvitationExpiresUtc, DateTime? ActivatedUtc, DateTime? LastLoginUtc);
+}
