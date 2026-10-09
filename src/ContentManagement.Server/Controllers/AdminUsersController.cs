@@ -98,10 +98,10 @@ public sealed class AdminUsersController(
         if (user is null)
             return NotFound();
 
-        if (!Enum.IsDefined(request.Status))
+        if (!Enum.TryParse<ManagedUserStatus>(request.Status, ignoreCase: true, out var status) || !Enum.IsDefined(status))
             return BadRequest(new { message = "Unsupported user status." });
 
-        user.Status = request.Status;
+        user.Status = status;
         user.PermissionsJson = JsonSerializer.Serialize(permissions);
         user.UpdatedUtc = DateTime.UtcNow;
         if (user.Status != ManagedUserStatus.Invited)
@@ -186,11 +186,11 @@ public sealed class AdminUsersController(
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
     private static UserResponse ToResponse(ManagedUser user) =>
-        new(user.Id, user.Email, user.Status, JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [],
+        new(user.Id, user.Email, user.Status.ToString(), JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [],
             user.CreatedUtc, user.InvitedUtc, user.InvitationExpiresUtc, user.ActivatedUtc, user.LastLoginUtc);
 
     public sealed record InviteUserRequest(string Email, string[] Permissions);
-    public sealed record UpdateUserRequest(ManagedUserStatus Status, string[] Permissions);
-    public sealed record UserResponse(Guid Id, string Email, ManagedUserStatus Status, string[] Permissions,
+    public sealed record UpdateUserRequest(string Status, string[] Permissions);
+    public sealed record UserResponse(Guid Id, string Email, string Status, string[] Permissions,
         DateTime CreatedUtc, DateTime? InvitedUtc, DateTime? InvitationExpiresUtc, DateTime? ActivatedUtc, DateTime? LastLoginUtc);
 }
