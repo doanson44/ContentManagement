@@ -71,13 +71,13 @@ public sealed class ApiKeyAuthenticationHandlerTests
         var options = new ApiKeyOptions
         {
             ApiKey = ConfiguredKey,
-            Scopes = scopes.ToList()
+            Scopes = scopes
         };
         var handler = new ApiKeyAuthenticationHandler(
             new TestOptionsMonitor<AuthenticationSchemeOptions>(new AuthenticationSchemeOptions()),
             NullLoggerFactory.Instance,
             UrlEncoder.Default,
-            new TestOptionsMonitor<ApiKeyOptions>(options));
+            Options.Create(options));
 
         var context = new DefaultHttpContext();
         if (suppliedKeys is not null)
