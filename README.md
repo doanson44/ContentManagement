@@ -10,10 +10,26 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
 - Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
 - Lifecycle status enum and SQL row-version concurrency tokens.
+- API-key authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. All endpoints require authentication by default; health is explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 
-Authentication/authorization, public file/JSON APIs, complete lifecycle orchestration, cleanup/recovery jobs, and administrative workflows are not implemented. Storage and compression services are internal foundations and must not be exposed without server-side authorization and resource-level access checks.
+## Authentication configuration
+
+Configure a high-entropy secret outside source control, for example through an environment variable or secret manager:
+
+```powershell
+$env:Authentication__ApiKey = "replace-with-a-long-random-secret"
+$env:Authentication__Scopes__0 = "files.read"
+$env:Authentication__Scopes__1 = "files.write"
+$env:Authentication__Scopes__2 = "json.read"
+```
+
+Use a secret manager or protected environment variables in production; never embed this secret in Blazor WebAssembly configuration, JavaScript, appsettings committed to source control, or logs. The server fails at startup if no API key is configured. Send it on server-to-server calls as `X-Content-Management-Key`.
+
+Supported scopes are `files.read`, `files.write`, `files.delete`, `json.read`, `json.write`, and `json.delete`. Grant only required scopes. Apply a policy such as `[Authorize(Policy = ScopePolicies.FilesRead)]` on each corresponding controller action. The fallback authorization policy requires authentication for all endpoints unless explicitly marked `[AllowAnonymous]`.
+
+This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client registration, hashed secret storage, rotation/revocation, OAuth 2.0 client credentials, token issuance, admin OTP login, and browser-admin sessions are not implemented. Do not use this API key as a browser login credential.
 
 ## Requirements
 
@@ -43,13 +59,15 @@ Use a local-only test password and do not commit credentials. CI uses a disposab
 
 ## Run the application
 
+Set `Authentication__ApiKey` and then run:
+
 ```bash
 dotnet run --project src/ContentManagement.Server/ContentManagement.Server.csproj
 ```
 
 The server hosts the client at `/` and the health endpoint at `/api/health`. HTTPS redirection may require trusting the local development certificate.
 
-## Configuration
+## Storage configuration
 
 The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Configure SQL with `ConnectionStrings__ContentManagement`. Migrations are not applied automatically; apply reviewed migrations during deployment after a backup.
 
@@ -59,7 +77,7 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
-- Do not expose storage services through APIs until authentication, authorization, rate limits, and resource ownership checks exist.
+- The storage services are not yet exposed through content APIs. Do not expose them until each endpoint has authentication, the appropriate scope policy, resource ownership checks, rate limits, and audit logging.
 
 ## Windows x86 package
 
