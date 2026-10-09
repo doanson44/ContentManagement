@@ -1,0 +1,239 @@
+@page "/dashboard/setup"
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Setup · ContentManagement</PageTitle>
+
+@if (_loading)
+{
+    <div class="dashboard-loading">Loading setup…</div>
+}
+else if (_signedIn)
+{
+    <div class="dashboard-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p>
+            <a class="sidebar-link" href="/dashboard"><span>⌂</span> Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p>
+            <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
+            <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+            <p class="sidebar-label">SYSTEM</p>
+            <a class="sidebar-link active" href="/dashboard/setup"><span>⚙</span> Setup</a>
+            <div class="sidebar-bottom">
+                <div class="admin-avatar">A</div>
+                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
+                <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
+            </div>
+        </aside>
+
+        <main class="dashboard-main setup-main">
+            <header class="dashboard-header">
+                <div>
+                    <p class="dashboard-eyebrow">SYSTEM CONFIGURATION</p>
+                    <h1>Setup</h1>
+                    <p class="dashboard-subtitle">Configure outbound email and stale-file cleanup policy.</p>
+                </div>
+                <div class="session-pill"><span></span> Admin session active</div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="setup-notice @(_isError ? "error" : "success")" role="status">@_message</div>
+            }
+
+            <section class="setup-card">
+                <div class="setup-section-heading">
+                    <div class="setup-section-icon email-setup-icon">✉</div>
+                    <div><h2>Email configuration</h2><p>SMTP settings used for administrator OTP and test messages.</p></div>
+                </div>
+                <div class="setup-form-grid">
+                    <label>SMTP host<input @bind="_model.SmtpHost" placeholder="smtp.example.com" /></label>
+                    <label>Port<input type="number" min="1" max="65535" @bind="_model.SmtpPort" /></label>
+                    <label>Username<input @bind="_model.SmtpUsername" autocomplete="username" /></label>
+                    <label>Password<input type="password" @bind="_model.SmtpPassword" autocomplete="new-password" placeholder="@(_hasPassword ? "Saved; leave blank to keep current" : "SMTP password")" /></label>
+                    <label>From email<input type="email" @bind="_model.SmtpFromEmail" placeholder="noreply@example.com" /></label>
+                    <label>From name<input @bind="_model.SmtpFromName" /></label>
+                    <label class="setup-checkbox"><input type="checkbox" @bind="_model.SmtpUseSsl" /> Use SSL/TLS</label>
+                    <label>Test recipient<input type="email" @bind="_model.TestRecipientEmail" placeholder="you@example.com" /></label>
+                </div>
+                <div class="setup-actions">
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save settings</button>
+                    <button class="setup-secondary" @onclick="TestEmailAsync" disabled="@_busy">Test send</button>
+                    @if (_hasPassword) { <span class="setup-hint">A password is saved.</span> }
+                </div>
+            </section>
+
+            <section class="setup-card">
+                <div class="setup-section-heading">
+                    <div class="setup-section-icon cleanup-setup-icon">⌫</div>
+                    <div><h2>Stale file cleanup</h2><p>Old active files are marked first, then permanently removed after a grace period.</p></div>
+                </div>
+                <div class="setup-form-grid cleanup-grid">
+                    <label>File age threshold (days)<input type="number" min="1" max="3650" @bind="_model.StaleFileAgeDays" /><small>Files older than this are eligible for cleanup.</small></label>
+                    <label>Cleanup check interval (hours)<input type="number" min="1" max="24" @bind="_model.CleanupIntervalHours" /><small>Hangfire checks hourly and runs when this interval has elapsed.</small></label>
+                    <label>Deletion grace period (days)<input type="number" min="1" max="90" @bind="_model.DeletionGracePeriodDays" /><small>Marked files remain in the database during this period.</small></label>
+                </div>
+                <div class="cleanup-warning"><strong>Requires Hangfire</strong><span>Cleanup runs only when Hangfire is enabled and its SQL Server connection is configured. Changes apply to future runs; files are not deleted immediately when you save.</span></div>
+                <div class="setup-actions"><button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save settings</button></div>
+            </section>
+            <footer class="dashboard-footer">ContentManagement <span>·</span> System setup</footer>
+        </main>
+    </div>
+}
+else
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting to sign in…</div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _signedIn;
+    private bool _busy;
+    private bool _isError;
+    private bool _hasPassword;
+    private string _email = "";
+    private string _message = "";
+    private SetupModel _model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var sessionResponse = await Http.GetAsync("api/auth/me");
+            if (!sessionResponse.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+            var session = await sessionResponse.Content.ReadFromJsonAsync<SessionResponse>();
+            _email = session?.Email ?? "";
+            _signedIn = !string.IsNullOrWhiteSpace(_email);
+            if (!_signedIn)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            using var response = await Http.GetAsync("api/admin/setup");
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage("Unable to load setup settings.", true);
+                return;
+            }
+            var settings = await response.Content.ReadFromJsonAsync<SetupResponse>();
+            if (settings is not null)
+            {
+                _model = new SetupModel
+                {
+                    SmtpHost = settings.SmtpHost,
+                    SmtpPort = settings.SmtpPort,
+                    SmtpUseSsl = settings.SmtpUseSsl,
+                    SmtpUsername = settings.SmtpUsername,
+                    SmtpFromEmail = settings.SmtpFromEmail,
+                    SmtpFromName = settings.SmtpFromName,
+                    TestRecipientEmail = settings.TestRecipientEmail,
+                    StaleFileAgeDays = settings.StaleFileAgeDays,
+                    CleanupIntervalHours = settings.CleanupIntervalHours,
+                    DeletionGracePeriodDays = settings.DeletionGracePeriodDays
+                };
+                _hasPassword = settings.HasSmtpPassword;
+            }
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _loading = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var response = await Http.PutAsJsonAsync("api/admin/setup", _model);
+            if (!response.IsSuccessStatusCode)
+            {
+                var problem = await response.Content.ReadFromJsonAsync<ApiMessage>();
+                SetMessage(problem?.Message ?? "Unable to save setup settings.", true);
+                return;
+            }
+            var saved = await response.Content.ReadFromJsonAsync<SetupResponse>();
+            _hasPassword = saved?.HasSmtpPassword ?? _hasPassword;
+            _model.SmtpPassword = "";
+            SetMessage("Setup settings saved.", false);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task TestEmailAsync()
+    {
+        if (_busy) return;
+        if (string.IsNullOrWhiteSpace(_model.TestRecipientEmail))
+        {
+            SetMessage("Enter a test recipient email address.", true);
+            return;
+        }
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var saveResponse = await Http.PutAsJsonAsync("api/admin/setup", _model);
+            if (!saveResponse.IsSuccessStatusCode)
+            {
+                SetMessage("Save valid SMTP settings before sending a test email.", true);
+                return;
+            }
+            var saved = await saveResponse.Content.ReadFromJsonAsync<SetupResponse>();
+            _hasPassword = saved?.HasSmtpPassword ?? _hasPassword;
+            _model.SmtpPassword = "";
+            using var response = await Http.PostAsJsonAsync("api/admin/setup/test-email", new TestEmailRequest(_model.TestRecipientEmail));
+            var result = await response.Content.ReadFromJsonAsync<ApiMessage>();
+            SetMessage(result?.Message ?? (response.IsSuccessStatusCode ? "Test email sent." : "Test email failed. Check server logs."), !response.IsSuccessStatusCode);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsync("api/auth/logout", null);
+            if (response.IsSuccessStatusCode)
+                Navigation.NavigateTo("/", forceLoad: true, replace: true);
+            else
+                SetMessage("Unable to sign out. Please try again.", true);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private void SetMessage(string message, bool error) { _message = message; _isError = error; }
+
+    private sealed class SetupModel
+    {
+        public string SmtpHost { get; set; } = "";
+        public int SmtpPort { get; set; } = 587;
+        public bool SmtpUseSsl { get; set; } = true;
+        public string SmtpUsername { get; set; } = "";
+        public string SmtpPassword { get; set; } = "";
+        public string SmtpFromEmail { get; set; } = "";
+        public string SmtpFromName { get; set; } = "ContentManagement";
+        public string TestRecipientEmail { get; set; } = "";
+        public int StaleFileAgeDays { get; set; } = 90;
+        public int CleanupIntervalHours { get; set; } = 24;
+        public int DeletionGracePeriodDays { get; set; } = 7;
+    }
+    private sealed record SessionResponse(string Email);
+    private sealed record SetupResponse(string SmtpHost, int SmtpPort, bool SmtpUseSsl, string SmtpUsername,
+        bool HasSmtpPassword, string SmtpFromEmail, string SmtpFromName, string TestRecipientEmail,
+        int StaleFileAgeDays, int CleanupIntervalHours, int DeletionGracePeriodDays, DateTime UpdatedUtc);
+    private sealed record TestEmailRequest(string RecipientEmail);
+    private sealed record ApiMessage(string? Message);
+}
