@@ -17,6 +17,7 @@ else if (_signedIn)
             <p class="sidebar-label">WORKSPACE</p>
             <a class="sidebar-link active" href="/dashboard"><span>⌂</span> Dashboard</a>
             <p class="sidebar-label">MANAGEMENT</p>
+            <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
             <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
@@ -36,12 +37,19 @@ else if (_signedIn)
                     <h1>Dashboard</h1>
                     <p class="dashboard-subtitle">Manage API access and your content from one place.</p>
                 </div>
-                <div class="session-pill"><span></span> Admin session active</div>
+                <div class="session-pill"><span></span> @(_isAdministrator ? "Admin session active" : "User session active")</div>
             </header>
 
             @if (!string.IsNullOrWhiteSpace(_message))
             {
                 <div class="dashboard-message">@_message</div>
+            }
+            @if (_showWelcome)
+            {
+                <div class="welcome-notice" role="status">
+                    <div><strong>Welcome to ContentManagement!</strong><span>Your account is ready. You can now access your workspace.</span></div>
+                    <button type="button" aria-label="Dismiss welcome message" @onclick="DismissWelcome">×</button>
+                </div>
             }
 
             <section class="welcome-panel">
@@ -55,10 +63,16 @@ else if (_signedIn)
 
             <div class="section-heading">
                 <div><h2>Management</h2><p>Core areas of your content platform</p></div>
-                <span class="module-count">3 modules</span>
+                <span class="module-count">4 modules</span>
             </div>
 
             <section class="module-grid" aria-label="Management modules">
+                <article class="module-card">
+                    <div class="module-icon permission-icon">♙</div>
+                    <div class="module-card-heading"><h3>User management</h3><span class="module-status">Available</span></div>
+                    <p>Invite users, assign content permissions, and activate or disable accounts.</p>
+                    <div class="module-footer"><span><a href="/dashboard/users">Manage users</a></span><span class="module-arrow">↗</span></div>
+                </article>
                 <article class="module-card">
                     <div class="module-icon api-icon">⌘</div>
                     <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
@@ -90,12 +104,15 @@ else
 @code {
     private bool _checkingSession = true;
     private bool _signedIn;
+    private bool _isAdministrator;
+    private bool _showWelcome;
     private bool _busy;
     private string _email = "";
     private string _message = "";
 
     protected override async Task OnInitializedAsync()
     {
+        _showWelcome = Navigation.Uri.Contains("welcome=1", StringComparison.OrdinalIgnoreCase);
         try
         {
             using var response = await Http.GetAsync("api/auth/me");
@@ -103,6 +120,7 @@ else
             {
                 var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
                 _email = session?.Email ?? "";
+                _isAdministrator = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal);
                 _signedIn = !string.IsNullOrWhiteSpace(_email);
             }
         }
@@ -130,5 +148,7 @@ else
         finally { _busy = false; }
     }
 
-    private sealed record SessionResponse(string Email);
+    private void DismissWelcome() { _showWelcome = false; Navigation.NavigateTo("/dashboard", replace: true); }
+
+    private sealed record SessionResponse(string Email, string? Role);
 }
