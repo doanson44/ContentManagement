@@ -9,10 +9,19 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<JsonDocumentRecord> JsonDocuments => Set<JsonDocumentRecord>();
     public DbSet<AdminOtpChallenge> AdminOtpChallenges => Set<AdminOtpChallenge>();
+    public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<SystemSettings>(entity =>
+        {
+            entity.ToTable("SystemSettings");
+            entity.HasKey(settings => settings.Id);
+            entity.Property(settings => settings.Id).ValueGeneratedNever();
+            entity.HasData(new SystemSettings { Id = 1, SmtpPort = 587, SmtpUseSsl = true, SmtpFromName = "ContentManagement", StaleFileAgeDays = 90, CleanupIntervalHours = 24, DeletionGracePeriodDays = 7, UpdatedUtc = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc) });
+        });
 
         modelBuilder.Entity<AdminOtpChallenge>(entity =>
         {
