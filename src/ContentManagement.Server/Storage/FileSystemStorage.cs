@@ -49,6 +49,24 @@ public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options
         }
     }
 
+    public Task DeleteAsync(string storageKey, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(storageKey) || Path.IsPathRooted(storageKey) ||
+            storageKey.Contains(':') || storageKey.Contains('\\') ||
+            storageKey.Split('/').Any(part => part is "" or "." or ".."))
+            throw new ArgumentException("Invalid storage key.", nameof(storageKey));
+
+        var path = Path.GetFullPath(Path.Combine(_root, storageKey.Replace('/', Path.DirectorySeparatorChar)));
+        var prefix = _root.EndsWith(Path.DirectorySeparatorChar) ? _root : _root + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Invalid storage key.", nameof(storageKey));
+
+        if (File.Exists(path))
+            File.Delete(path);
+        return Task.CompletedTask;
+    }
+
     public Task<Stream> OpenReadAsync(string storageKey, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
