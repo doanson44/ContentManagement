@@ -117,5 +117,5 @@ Before production use, configure external SQL Server connectivity, a persistent 
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, permissions, files, and JSON documents. These four management screens are placeholders for subsequent increments; the dashboard does not imply that CRUD APIs or client/role management have already been implemented.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. These management screens are placeholders for subsequent increments; the dashboard does not imply that CRUD APIs or client management have already been implemented.
 
