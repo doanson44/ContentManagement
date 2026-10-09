@@ -35,6 +35,8 @@ builder.Services.AddOptions<AdminAuthOptions>()
     .Validate(options => options.MaxVerificationAttempts is >= 3 and <= 10)
     .Validate(options => options.ResendCooldownSeconds is >= 30 and <= 600)
     .Validate(options => options.SessionLifetimeHours is >= 1 and <= 24)
+    .Validate(options => options.AllowedEmails.Length == 0 || options.OtpHashKey.Length >= 32,
+        "AdminAuth:OtpHashKey must contain at least 32 characters when admin email sign-in is enabled.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<SmtpOptions>()
