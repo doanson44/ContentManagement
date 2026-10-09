@@ -49,7 +49,6 @@ public sealed class FilesController(
 
     [HttpPost]
     [Authorize(Policy = ScopePolicies.FilesWrite)]
-    [RequestSizeLimit(long.MaxValue)]
     public async Task<ActionResult<FileDetails>> Upload(IFormFile? file, CancellationToken cancellationToken)
     {
         if (file is null || file.Length <= 0) return BadRequest(new { message = "Choose a non-empty file." });
@@ -67,7 +66,7 @@ public sealed class FilesController(
         var entity = new StoredFile
         {
             Id = Guid.NewGuid(),
-            FileName = Path.GetFileName(file.FileName).Trim(),
+            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace('\\\\', '/')).Trim(),
             ContentType = SafeContentType(file.ContentType),
             StorageKey = binary.StorageKey,
             SizeBytes = binary.SizeBytes,
