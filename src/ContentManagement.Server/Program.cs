@@ -3,6 +3,7 @@ using ContentManagement.Server.BackgroundJobs;
 using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
+using ContentManagement.Server.Domain;
 using ContentManagement.Server.Storage;
 using Hangfire;
 using Hangfire.SqlServer;
@@ -126,6 +127,36 @@ builder.Services.AddAuthentication(options =>
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
+        };
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            if (context.Principal?.IsInRole("User") != true)
+                return;
+
+            var email = context.Principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            var db = context.HttpContext.RequestServices.GetService<ContentManagementDbContext>();
+            var user = string.IsNullOrWhiteSpace(email) || db is null
+                ? null
+                : await db.ManagedUsers.AsNoTracking().SingleOrDefaultAsync(
+                    item => item.Email == email && item.Status == ManagedUserStatus.Active,
+                    context.HttpContext.RequestAborted);
+
+            if (user is null)
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return;
+            }
+
+            var claims = context.Principal.Claims
+                .Where(claim => claim.Type != "scope")
+                .ToList();
+            var permissions = System.Text.Json.JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [];
+            claims.AddRange(permissions.Distinct(StringComparer.Ordinal)
+                .Select(permission => new System.Security.Claims.Claim("scope", permission)));
+            var identity = new System.Security.Claims.ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            context.ReplacePrincipal(new System.Security.Claims.ClaimsPrincipal(identity));
+            context.ShouldRenew = true;
         };
     });
 
