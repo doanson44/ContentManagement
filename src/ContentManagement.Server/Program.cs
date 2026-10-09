@@ -1,4 +1,5 @@
 using ContentManagement.Server.Auth;
+using ContentManagement.Server.BackgroundJobs;
 using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
@@ -93,6 +94,7 @@ if (hangfireEnabled)
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
 builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<StaleFileCleanupJob>();
 
 builder.Services.AddAuthentication(options =>
     {
@@ -212,6 +214,8 @@ app.UseAuthorization();
 
 if (hangfireEnabled)
 {
+    RecurringJob.AddOrUpdate<StaleFileCleanupJob>(
+        "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly);
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]
