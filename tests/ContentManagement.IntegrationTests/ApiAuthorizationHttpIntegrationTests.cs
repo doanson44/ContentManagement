@@ -27,6 +27,35 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     }
 
     [Fact]
+    public async Task Unsafe_request_without_origin_is_rejected()
+    {
+        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsync("/api/auth/logout", null);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unsafe_request_from_same_origin_passes_origin_guard()
+    {
+        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "http://localhost");
+        using var response = await client.PostAsync("/api/auth/logout", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unsafe_request_from_untrusted_origin_is_rejected()
+    {
+        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://attacker.example");
+        using var response = await client.PostAsync("/api/auth/logout", null);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Protected_endpoint_returns_401_without_api_key()
     {
         using var factory = new AuthorizationTestApplicationFactory(ApiKey, [ScopePolicies.FilesRead]);
