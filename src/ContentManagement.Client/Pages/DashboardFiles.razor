@@ -98,6 +98,7 @@ else
         finally { _loading=false; }
     }
     private async Task SelectAsync(FileItem item) {
+        if (!string.IsNullOrEmpty(_subtitleUrl)) await JS.InvokeVoidAsync("contentManagementFiles.revokeSubtitleUrl", _subtitleUrl);
         _selected=item; _rename.FileName=item.FileName; _textPreview=null; _subtitleUrl=null; _subtitleMessage="";
         if(IsText(item.ContentType) && item.SizeBytes <= 256*1024) {
             try { _textPreview=await Http.GetStringAsync(ContentUrl(item.Id)); }
