@@ -27,7 +27,7 @@ else
         </aside>
         <main class="dashboard-main files-main">
             <header class="dashboard-header"><div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>Files</h1><p class="dashboard-subtitle">Upload, preview and manage binary assets.</p></div>
-                <label class="files-upload-button">Upload file<input type="file" @onchange="UploadAsync" disabled="@_busy" /></label>
+                <label class="files-upload-button">Upload file<InputFile OnChange="UploadAsync" disabled="@_busy" /></label>
             </header>
             @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
             <div class="files-workspace">
@@ -51,7 +51,7 @@ else
                             else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
                             else if (IsVideo(_selected.ContentType)) {
                                 <video class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)"><track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /></video>
-                                <div class="subtitle-panel"><strong>Subtitles</strong><p>Upload a WebVTT (.vtt) subtitle file to use the browser subtitle track.</p><label class="files-secondary subtitle-upload">Upload .vtt<input type="file" accept=".vtt,text/vtt" @onchange="UploadSubtitleAsync" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
+                                <div class="subtitle-panel"><strong>Subtitles</strong><p>Upload a WebVTT (.vtt) subtitle file to use the browser subtitle track.</p><label class="files-secondary subtitle-upload">Upload .vtt<InputFile OnChange="UploadSubtitleAsync" accept=".vtt,text/vtt" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
                             }
                             else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
                             else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
@@ -103,12 +103,25 @@ else
             catch(HttpRequestException) { _textPreview="Preview could not be loaded."; }
         }
     }
-    private async Task UploadAsync(ChangeEventArgs args) {
-        if(args.Value is not Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs) { }
-        // File uploads use the browser InputFile component so streams remain bounded.
+    private async Task UploadAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
+        var file=args.File; if(file is null) return; _busy=true; _message="";
+        try {
+            using var content=new MultipartFormDataContent();
+            await using var stream=file.OpenReadStream(100*1024*1024);
+            var part=new StreamContent(stream);
+            part.Headers.ContentType=new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(file.ContentType)?"application/octet-stream":file.ContentType);
+            content.Add(part,"file",file.Name);
+            using var response=await Http.PostAsync("api/files",content);
+            if(response.IsSuccessStatusCode){_message="File uploaded.";_page=1;await LoadAsync();}
+            else _message=response.StatusCode==System.Net.HttpStatusCode.RequestEntityTooLarge?"File exceeds the upload limit.":"Upload failed. Check file size and server permissions.";
+        } catch(HttpRequestException){_message="Upload failed. Unable to connect to the server.";}
+          catch(IOException){_message="Upload failed. The file may exceed the browser upload limit.";}
+        finally{_busy=false;}
+    }
+    private async Task UploadSubtitleAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
+        _subtitleMessage="Subtitle upload endpoint is not implemented yet.";
         await Task.CompletedTask;
     }
-    private async Task UploadSubtitleAsync(ChangeEventArgs args) { _subtitleMessage="Subtitle upload requires the subtitle API, which is not available yet."; await Task.CompletedTask; }
     private async Task RenameAsync() {
         if(_selected is null) return; _busy=true;
         try { using var response=await Http.PatchAsJsonAsync($"api/files/{_selected.Id}",new { fileName=_rename.FileName, rowVersion=_selected.RowVersion }); if(response.IsSuccessStatusCode){_message="File name updated."; await LoadAsync();}else _message=response.StatusCode==System.Net.HttpStatusCode.Conflict?"This file changed. Refresh and retry.":"Unable to rename file."; }
