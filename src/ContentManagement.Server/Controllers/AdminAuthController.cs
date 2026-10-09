@@ -187,7 +187,7 @@ public sealed class AdminAuthController(
 
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     [HttpGet("me")]
-    public IActionResult Me() => Ok(new { email = User.FindFirstValue(ClaimTypes.Email) });
+    public IActionResult Me() => Ok(new { email = User.FindFirstValue(ClaimTypes.Email), role = User.FindFirstValue(ClaimTypes.Role) });
 
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     [HttpPost("logout")]
