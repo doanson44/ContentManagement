@@ -1,0 +1,76 @@
+@page "/invite/confirm"
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.WebUtilities
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Accept invitation · ContentManagement</PageTitle>
+
+<section class="login-shell">
+    <div class="login-brand">
+        <div class="brand-mark">CM</div>
+        <p class="eyebrow">CONTENT MANAGEMENT</p>
+        <h1>Join your workspace</h1>
+        <p class="login-subtitle">Accept your invitation to access ContentManagement.</p>
+    </div>
+    <div class="login-card">
+        @if (_busy)
+        {
+            <h2>Verifying invitation…</h2>
+            <p class="muted">Please wait while we verify your invitation link.</p>
+        }
+        else if (_accepted)
+        {
+            <div class="status-icon">✓</div>
+            <h2>Invitation accepted</h2>
+            <p class="muted">Your account is ready. Opening your workspace…</p>
+        }
+        else
+        {
+            <h2>Accept invitation</h2>
+            <p class="muted">This link can be used once and expires after 48 hours.</p>
+            @if (!string.IsNullOrWhiteSpace(_message)) { <p class="form-message error" role="alert">@_message</p> }
+            <button class="primary-button" @onclick="AcceptAsync" disabled="@string.IsNullOrWhiteSpace(_token)">Accept invitation</button>
+        }
+    </div>
+    <footer>ContentManagement · Secure invitation</footer>
+</section>
+
+@code {
+    private string _token = "";
+    private string _message = "";
+    private bool _busy;
+    private bool _accepted;
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        _token = query.TryGetValue("token", out var token) ? token.ToString() : "";
+        if (string.IsNullOrWhiteSpace(_token))
+            _message = "This invitation link is missing its token.";
+    }
+
+    private async Task AcceptAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_token)) return;
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/auth/accept-invitation", new { Token = _token });
+            if (!response.IsSuccessStatusCode)
+            {
+                _message = "This invitation is invalid, expired, or has already been used. Ask an administrator to send a new invitation.";
+                return;
+            }
+            _accepted = true;
+            Navigation.NavigateTo("/dashboard?welcome=1", forceLoad: true, replace: true);
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally { _busy = false; }
+    }
+}
