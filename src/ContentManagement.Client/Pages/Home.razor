@@ -32,7 +32,7 @@
             <input id="email" type="email" autocomplete="email" maxlength="254" @bind="_email" @bind:event="oninput" placeholder="you@company.com" disabled="@_busy" />
             @if (!string.IsNullOrWhiteSpace(_message)) { <p class="form-message error">@_message</p> }
             <button class="primary-button" @onclick="RequestOtpAsync" disabled="@_busy">@(_busy ? "Sending code…" : "Continue with email")</button>
-            <p class="fine-print">Administrators are configured by the server. Other users must accept an administrator invitation first.</p>
+            <p class="fine-print">Administrators are configured by the server. New users can <a href="/register">create an account</a> with email verification.</p>
         </div>
     }
     else
