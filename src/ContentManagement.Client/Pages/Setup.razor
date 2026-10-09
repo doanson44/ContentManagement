@@ -17,6 +17,7 @@ else if (_signedIn)
             <p class="sidebar-label">WORKSPACE</p>
             <a class="sidebar-link" href="/dashboard"><span>⌂</span> Dashboard</a>
             <p class="sidebar-label">MANAGEMENT</p>
+            <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
             <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
             <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
@@ -89,6 +90,11 @@ else
             var session = await sessionResponse.Content.ReadFromJsonAsync<SessionResponse>();
             _email = session?.Email ?? "";
             _signedIn = !string.IsNullOrWhiteSpace(_email);
+            if (!string.Equals(session?.Role, "Administrator", StringComparison.Ordinal))
+            {
+                Navigation.NavigateTo("/dashboard", replace: true);
+                return;
+            }
             if (!_signedIn)
             {
                 Navigation.NavigateTo("/", replace: true);
@@ -163,7 +169,7 @@ else
         public int DeletionGracePeriodDays { get; set; } = 7;
     }
 
-    private sealed record SessionResponse(string Email);
+    private sealed record SessionResponse(string Email, string? Role);
     private sealed record SetupResponse(int StaleFileAgeDays, int CleanupIntervalHours, int DeletionGracePeriodDays);
     private sealed record ApiMessage(string? Message);
 }
