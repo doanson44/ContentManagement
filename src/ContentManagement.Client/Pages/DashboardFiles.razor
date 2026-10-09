@@ -50,6 +50,7 @@ else
                         <div class="files-preview-content">
                             @if (IsImage(_selected.ContentType)) { <img class="files-image-preview" src="@ContentUrl(_selected.Id)" alt="@_selected.FileName" /> }
                             else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
+                            else if (IsAudio(_selected.ContentType)) { <audio class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)">Your browser does not support this audio format.</audio> }
                             else if (IsVideo(_selected.ContentType)) {
                                 <video class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)"><track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /></video>
                                 <div class="subtitle-panel"><strong>Subtitles</strong><p>Choose a WebVTT (.vtt) subtitle file from this device for the current preview. It is not saved to the server.</p><label class="files-secondary subtitle-upload">Upload .vtt<InputFile OnChange="UploadSubtitleAsync" accept=".vtt,text/vtt" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
@@ -162,8 +163,9 @@ else
     private static bool IsImage(string t)=>t.StartsWith("image/",StringComparison.OrdinalIgnoreCase)&&!t.Equals("image/svg+xml",StringComparison.OrdinalIgnoreCase);
     private static bool IsPdf(string t)=>t.Equals("application/pdf",StringComparison.OrdinalIgnoreCase);
     private static bool IsVideo(string t)=>t.StartsWith("video/",StringComparison.OrdinalIgnoreCase);
+    private static bool IsAudio(string t)=>t.StartsWith("audio/",StringComparison.OrdinalIgnoreCase);
     private static bool IsText(string t)=>t.StartsWith("text/",StringComparison.OrdinalIgnoreCase)||t is "application/json" or "application/xml" or "application/javascript";
-    private static string IconFor(string t)=>t.StartsWith("image/")?"IMG":t=="application/pdf"?"PDF":t.StartsWith("video/")?"VID":t.StartsWith("text/")||t=="application/json"?"TXT":"FILE";
+    private static string IconFor(string t)=>t.StartsWith("image/")?"IMG":t=="application/pdf"?"PDF":t.StartsWith("video/")?"VID":t.StartsWith("audio/")?"AUD":t.StartsWith("text/")||t=="application/json"?"TXT":"FILE";
     private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
     private sealed record SessionResponse(string Email, string? Role);
     private sealed record FileListResponse(List<FileItem> Items,long Total,int Page,int PageSize);
