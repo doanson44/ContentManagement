@@ -33,8 +33,10 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.Property(user => user.Status).HasConversion<int>();
             entity.Property(user => user.PermissionsJson).HasMaxLength(2000).IsRequired();
             entity.Property(user => user.InvitationTokenHash).HasMaxLength(64);
+            entity.Property(user => user.RegistrationTokenHash).HasMaxLength(64);
             entity.HasIndex(user => user.Email).IsUnique();
             entity.HasIndex(user => new { user.Status, user.InvitationExpiresUtc });
+            entity.HasIndex(user => new { user.Status, user.RegistrationExpiresUtc });
         });
 
         modelBuilder.Entity<AdminOtpChallenge>(entity =>
