@@ -24,14 +24,15 @@ public sealed class AdminAuthController(
     [AllowAnonymous]
     [HttpPost("request-otp")]
     [EnableRateLimiting("otp-request")]
-    public async Task<IActionResult> RequestOtp([FromBody] RequestOtpRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> RequestOtp(CancellationToken cancellationToken)
     {
-        if (!TryNormalizeEmail(request.Email, out var email))
-            return BadRequest(new { message = "Enter a valid email address." });
-
-        // This application has one interactive identity: an administrator explicitly allowlisted by configuration.
-        if (!adminOptions.Value.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
-            return Accepted(new { message = "If this address is eligible, a sign-in code will be sent." });
+        var allowedEmails = adminOptions.Value.AllowedEmails;
+        if (allowedEmails.Length != 1 || !TryNormalizeEmail(allowedEmails[0], out var email))
+        {
+            logger.LogError("Administrator OTP login requires exactly one valid AdminAuth:AllowedEmails entry.");
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Administrator sign-in is not configured.");
+        }
 
         var options = adminOptions.Value;
         var now = DateTime.UtcNow;
@@ -40,7 +41,7 @@ public sealed class AdminAuthController(
             .OrderByDescending(x => x.CreatedUtc)
             .FirstOrDefaultAsync(cancellationToken);
         if (latest is not null && now - latest.CreatedUtc < TimeSpan.FromSeconds(options.ResendCooldownSeconds))
-            return Accepted(new { message = "If this address is eligible, a sign-in code will be sent." });
+            return Accepted(new { message = "A sign-in code has already been sent recently. Check the administrator mailbox." });
 
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         var challenge = new AdminOtpChallenge
@@ -68,7 +69,7 @@ public sealed class AdminAuthController(
                 title: "Email delivery is temporarily unavailable.");
         }
 
-        return Accepted(new { message = "If this address is eligible, a sign-in code will be sent." });
+        return Accepted(new { message = "The sign-in code was sent to the configured administrator mailbox." });
     }
 
     [AllowAnonymous]
@@ -76,14 +77,15 @@ public sealed class AdminAuthController(
     [EnableRateLimiting("otp-verify")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken cancellationToken)
     {
-        if (!TryNormalizeEmail(request.Email, out var email) ||
-            string.IsNullOrWhiteSpace(request.Code) ||
+        var allowedEmails = adminOptions.Value.AllowedEmails;
+        if (allowedEmails.Length != 1 || !TryNormalizeEmail(allowedEmails[0], out var email))
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Administrator sign-in is not configured.");
+
+        if (string.IsNullOrWhiteSpace(request.Code) ||
             request.Code.Length != 6 ||
             request.Code.Any(character => character is < '0' or > '9'))
-            return BadRequest(new { message = "Enter a valid email address and six-digit code." });
-
-        if (!adminOptions.Value.AllowedEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
-            return Unauthorized(new { message = "The code is invalid or expired." });
+            return BadRequest(new { message = "Enter the six-digit code from the administrator email." });
 
         var challenge = await db.AdminOtpChallenges
             .Where(x => x.Email == email && x.ConsumedUtc == null)
@@ -160,6 +162,5 @@ public sealed class AdminAuthController(
     private static string HashOtp(string email, string code, string key) =>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes($"{email}:{code}")));
 
-    public sealed record RequestOtpRequest(string Email);
-    public sealed record VerifyOtpRequest(string Email, string Code);
+    public sealed record VerifyOtpRequest(string Code);
 }
