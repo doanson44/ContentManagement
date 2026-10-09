@@ -17,7 +17,7 @@ namespace ContentManagement.Server.Controllers;
 [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme, Roles = "Administrator")]
 public sealed class AdminUsersController(
     ContentManagementDbContext db,
-    IEmailSender emailSender,
+    IEmailJobQueue emailJobQueue,
     IOptions<AdminAuthOptions> authOptions,
     ILogger<AdminUsersController> logger) : ControllerBase
 {
@@ -163,7 +163,7 @@ public sealed class AdminUsersController(
             throw new InvalidOperationException("AdminAuth:PublicBaseUrl must be configured as an absolute HTTPS URL before sending invitations.");
 
         var link = $"{baseUrl}/invite/confirm?token={Uri.EscapeDataString(token)}";
-        await emailSender.SendInvitationAsync(email, link, cancellationToken);
+        emailJobQueue.EnqueueInvitation(email, link);
     }
 
     private static bool TryNormalizeEmail(string? value, out string email)
