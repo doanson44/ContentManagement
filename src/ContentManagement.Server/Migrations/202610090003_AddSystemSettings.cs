@@ -28,14 +28,15 @@ public sealed class AddSystemSettings : Migration
                 StaleFileAgeDays = table.Column<int>(type: "int", nullable: false),
                 CleanupIntervalHours = table.Column<int>(type: "int", nullable: false),
                 DeletionGracePeriodDays = table.Column<int>(type: "int", nullable: false),
-                UpdatedUtc = table.Column<DateTime>(type: "datetime2", nullable: false)
+                UpdatedUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                LastCleanupUtc = table.Column<DateTime>(type: "datetime2", nullable: true)
             },
             constraints: table => table.PrimaryKey("PK_SystemSettings", x => x.Id));
 
         migrationBuilder.InsertData(
             table: "SystemSettings",
-            columns: new[] { "Id", "SmtpHost", "SmtpPort", "SmtpUseSsl", "SmtpUsername", "SmtpPassword", "SmtpFromEmail", "SmtpFromName", "TestRecipientEmail", "StaleFileAgeDays", "CleanupIntervalHours", "DeletionGracePeriodDays", "UpdatedUtc" },
-            values: new object[] { 1, "", 587, true, "", "", "", "ContentManagement", "", 90, 24, 7, new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc) });
+            columns: new[] { "Id", "SmtpHost", "SmtpPort", "SmtpUseSsl", "SmtpUsername", "SmtpPassword", "SmtpFromEmail", "SmtpFromName", "TestRecipientEmail", "StaleFileAgeDays", "CleanupIntervalHours", "DeletionGracePeriodDays", "UpdatedUtc", "LastCleanupUtc" },
+            values: new object[] { 1, "", 587, true, "", "", "", "ContentManagement", "", 90, 24, 7, new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc), null });
     }
 
     protected override void Down(MigrationBuilder migrationBuilder) =>
