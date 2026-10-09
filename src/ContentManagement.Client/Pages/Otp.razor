@@ -1,0 +1,163 @@
+@page "/otp"
+@using System.Net
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Administrator verification · ContentManagement</PageTitle>
+
+<section class="login-shell">
+    <div class="login-brand">
+        <div class="brand-mark">CM</div>
+        <p class="eyebrow">CONTENT MANAGEMENT</p>
+        <h1>Check administrator email</h1>
+        <p class="login-subtitle">A one-time sign-in code is sent automatically to the administrator email configured on the server.</p>
+    </div>
+
+    <div class="login-card">
+        @if (_checkingSession || _requestingCode)
+        {
+            <h2>@(_checkingSession ? "Checking session…" : "Sending verification code…")</h2>
+            <p class="muted">@(_checkingSession ? "Please wait." : "Check the configured administrator mailbox in a moment.")</p>
+        }
+        else if (_signedIn)
+        {
+            <div class="status-icon">✓</div>
+            <h2>Already signed in</h2>
+            <p class="muted">Opening the administrator dashboard…</p>
+        }
+        else
+        {
+            <h2>Enter your OTP</h2>
+            <p class="muted">Enter the six-digit code from the administrator mailbox. The code expires after a short period and can only be used once.</p>
+            <label for="otp">One-time code</label>
+            <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+                   @bind="_code" @bind:event="oninput" placeholder="000000" disabled="@_busy" />
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <p class="form-message @(_messageIsSuccess ? "success" : "error")" role="status">@_message</p>
+            }
+            <button class="primary-button" @onclick="VerifyOtpAsync" disabled="@(_busy || _code.Length != 6)">
+                @(_busy ? "Verifying…" : "Verify and continue")
+            </button>
+            <button class="secondary-button" @onclick="RequestOtpAsync" disabled="@(_busy || _requestingCode)">
+                Send a new code
+            </button>
+        }
+    </div>
+    <footer>Protected administrator access · ContentManagement</footer>
+</section>
+
+@code {
+    private string _code = "";
+    private string _message = "";
+    private bool _messageIsSuccess;
+    private bool _checkingSession = true;
+    private bool _requestingCode;
+    private bool _signedIn;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/auth/me");
+            if (response.IsSuccessStatusCode)
+            {
+                _signedIn = true;
+                Navigation.NavigateTo("/dashboard", replace: true);
+                return;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally
+        {
+            _checkingSession = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_message))
+            await RequestOtpAsync();
+    }
+
+    private async Task RequestOtpAsync()
+    {
+        if (_busy || _requestingCode) return;
+        _message = "";
+        _messageIsSuccess = false;
+        _requestingCode = true;
+        try
+        {
+            using var response = await Http.PostAsync("api/auth/request-otp", content: null);
+            if (response.IsSuccessStatusCode)
+            {
+                _code = "";
+                _message = "A code was sent to the configured administrator mailbox, or a recent code is still valid. Check your inbox.";
+                _messageIsSuccess = true;
+            }
+            else
+            {
+                _message = await ReadErrorAsync(response);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally
+        {
+            _requestingCode = false;
+        }
+    }
+
+    private async Task VerifyOtpAsync()
+    {
+        _message = "";
+        _messageIsSuccess = false;
+        if (_code.Length != 6 || _code.Any(character => character is < '0' or > '9'))
+        {
+            _message = "Enter the six-digit code from the administrator email.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/auth/verify-otp", new { Code = _code });
+            if (response.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/dashboard", forceLoad: true, replace: true);
+                return;
+            }
+
+            _message = await ReadErrorAsync(response);
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var error = await response.Content.ReadFromJsonAsync<ApiError>();
+            return error?.Message ?? error?.Title ?? (response.StatusCode == HttpStatusCode.TooManyRequests
+                ? "Too many attempts. Wait a few minutes and try again."
+                : "The request could not be completed. Please try again.");
+        }
+        catch
+        {
+            return "The request could not be completed. Please try again.";
+        }
+    }
+
+    private sealed record ApiError(string? Message, string? Title);
+}

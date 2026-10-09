@@ -10,7 +10,6 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<JsonDocumentRecord> JsonDocuments => Set<JsonDocumentRecord>();
     public DbSet<AdminOtpChallenge> AdminOtpChallenges => Set<AdminOtpChallenge>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
-    public DbSet<ManagedUser> ManagedUsers => Set<ManagedUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -22,19 +21,6 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasKey(settings => settings.Id);
             entity.Property(settings => settings.Id).ValueGeneratedNever();
             entity.HasData(new SystemSettings { Id = 1, SmtpPort = 587, SmtpUseSsl = true, SmtpFromName = "ContentManagement", StaleFileAgeDays = 90, CleanupIntervalHours = 24, DeletionGracePeriodDays = 7, UpdatedUtc = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc) });
-        });
-
-        modelBuilder.Entity<ManagedUser>(entity =>
-        {
-            entity.ToTable("ManagedUsers");
-            entity.HasKey(user => user.Id);
-            entity.Property(user => user.Id).ValueGeneratedNever();
-            entity.Property(user => user.Email).HasMaxLength(254).IsRequired();
-            entity.Property(user => user.Status).HasConversion<int>();
-            entity.Property(user => user.PermissionsJson).HasMaxLength(2000).IsRequired();
-            entity.Property(user => user.InvitationTokenHash).HasMaxLength(64);
-            entity.HasIndex(user => user.Email).IsUnique();
-            entity.HasIndex(user => new { user.Status, user.InvitationExpiresUtc });
         });
 
         modelBuilder.Entity<AdminOtpChallenge>(entity =>
