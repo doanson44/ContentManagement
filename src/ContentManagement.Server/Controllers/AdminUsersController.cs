@@ -71,7 +71,7 @@ public sealed class AdminUsersController(
         await db.SaveChangesAsync(cancellationToken);
         try
         {
-            await SendInvitationAsync(email, token, cancellationToken);
+            QueueInvitation(email, token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -140,7 +140,7 @@ public sealed class AdminUsersController(
 
         try
         {
-            await SendInvitationAsync(user.Email, token, cancellationToken);
+            QueueInvitation(user.Email, token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -156,7 +156,7 @@ public sealed class AdminUsersController(
         return Accepted();
     }
 
-    private async Task SendInvitationAsync(string email, string token, CancellationToken cancellationToken)
+    private void QueueInvitation(string email, string token)
     {
         var baseUrl = authOptions.Value.PublicBaseUrl.TrimEnd('/');
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
