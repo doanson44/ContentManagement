@@ -1,5 +1,5 @@
-using System.Text.Encodings.Web;
 using System.Security.Claims;
+using System.Text.Encodings.Web;
 using ContentManagement.Server.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -16,11 +16,10 @@ public sealed class ApiKeyAuthenticationHandlerTests
     [Fact]
     public async Task Missing_header_returns_no_result()
     {
-        var result = await AuthenticateAsync(null);
+        var result = await AuthenticateAsync((string[]?)null);
 
-        Assert.Equal(AuthenticateResult.NoResult().Failure, result.Failure);
         Assert.False(result.Succeeded);
-        Assert.False(result.None is false);
+        Assert.Null(result.Failure);
     }
 
     [Theory]
@@ -60,10 +59,10 @@ public sealed class ApiKeyAuthenticationHandlerTests
             result.Principal.FindAll("scope").Select(claim => claim.Value).ToArray());
     }
 
-    private static async Task<AuthenticateResult> AuthenticateAsync(
+    private static Task<AuthenticateResult> AuthenticateAsync(
         string? suppliedKey,
         params string[] scopes) =>
-        await AuthenticateAsync(suppliedKey is null ? null : new[] { suppliedKey }, scopes);
+        AuthenticateAsync(suppliedKey is null ? null : new[] { suppliedKey }, scopes);
 
     private static async Task<AuthenticateResult> AuthenticateAsync(
         string[]? suppliedKeys,
