@@ -19,10 +19,6 @@ else if (_signedIn)
             <p class="sidebar-label">MANAGEMENT</p>
             @if (_isAdministrator)
             {
-                <a class="sidebar-link" href="/dashboard/users"><span>♙</span> Users</a>
-            }
-            @if (_isAdministrator)
-            {
                 <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
             }
             @if (CanAccessFiles)
@@ -39,8 +35,8 @@ else if (_signedIn)
                 <a class="sidebar-link" href="/dashboard/setup"><span>⚙</span> Setup</a>
             }
             <div class="sidebar-bottom">
-                <div class="admin-avatar">@(_isAdministrator ? "A" : "U")</div>
-                <div class="admin-identity"><strong>@(_isAdministrator ? "Administrator" : "User")</strong><span>@_email</span></div>
+                <div class="admin-avatar">A</div>
+                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
                 <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
             </div>
         </aside>
@@ -52,7 +48,7 @@ else if (_signedIn)
                     <h1>Dashboard</h1>
                     <p class="dashboard-subtitle">Manage API access and your content from one place.</p>
                 </div>
-                <div class="session-pill"><span></span> @(_isAdministrator ? "Admin session active" : "User session active")</div>
+                <div class="session-pill"><span></span> Admin session active</div>
             </header>
 
             @if (!string.IsNullOrWhiteSpace(_message))
@@ -71,7 +67,7 @@ else if (_signedIn)
                 <div>
                     <p class="welcome-kicker">CONTENT MANAGEMENT</p>
                     <h2>Welcome to your workspace</h2>
-                    <p>Choose a management area to get started. The dashboard navigation is ready; management screens will be added incrementally.</p>
+                    <p>Manage application configuration and monitor your content platform from one place.</p>
                 </div>
                 <div class="welcome-decoration" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             </section>
@@ -82,15 +78,6 @@ else if (_signedIn)
             </div>
 
             <section class="module-grid" aria-label="Management modules">
-                @if (_isAdministrator)
-                {
-                <article class="module-card">
-                    <div class="module-icon permission-icon">♙</div>
-                    <div class="module-card-heading"><h3>User management</h3><span class="module-status">Available</span></div>
-                    <p>Invite users, assign content permissions, and activate or disable accounts.</p>
-                    <div class="module-footer"><span><a href="/dashboard/users">Manage users</a></span><span class="module-arrow">↗</span></div>
-                </article>
-                }
                 @if (_isAdministrator)
                 {
                     <article class="module-card">
@@ -134,7 +121,6 @@ else
     private bool _isAdministrator;
     private bool _showWelcome;
     private bool _busy;
-    private HashSet<string> _permissions = new(StringComparer.Ordinal);
     private string _email = "";
     private string _message = "";
 
@@ -149,7 +135,6 @@ else
                 var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
                 _email = session?.Email ?? "";
                 _isAdministrator = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal);
-                _permissions = new HashSet<string>(session?.Permissions ?? [], StringComparer.Ordinal);
                 _signedIn = !string.IsNullOrWhiteSpace(_email);
             }
         }
@@ -177,11 +162,11 @@ else
         finally { _busy = false; }
     }
 
-    private bool CanAccessFiles => _isAdministrator || _permissions.Overlaps(["files.read", "files.write", "files.delete"]);
-    private bool CanAccessJson => _isAdministrator || _permissions.Overlaps(["json.read", "json.write", "json.delete"]);
-    private int VisibleModuleCount => (_isAdministrator ? 2 : 0) + (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
+    private bool CanAccessFiles => _isAdministrator;
+    private bool CanAccessJson => _isAdministrator;
+    private int VisibleModuleCount => (_isAdministrator ? 1 : 0) + (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
 
     private void DismissWelcome() { _showWelcome = false; Navigation.NavigateTo("/dashboard", replace: true); }
 
-    private sealed record SessionResponse(string Email, string? Role, string[]? Permissions);
+    private sealed record SessionResponse(string Email, string? Role);
 }
