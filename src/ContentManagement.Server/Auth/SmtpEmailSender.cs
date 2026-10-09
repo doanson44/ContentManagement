@@ -13,11 +13,6 @@ public sealed class SmtpEmailSender(
             $"Your one-time sign-in code is {code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.",
             cancellationToken);
 
-    public Task SendTestAsync(string email, CancellationToken cancellationToken) =>
-        SendAsync(email, "ContentManagement SMTP test",
-            "This is a test email from ContentManagement. Your SMTP configuration is working.",
-            cancellationToken);
-
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
         var configured = options.Value;
