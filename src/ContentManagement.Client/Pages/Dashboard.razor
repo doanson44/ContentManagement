@@ -62,7 +62,7 @@ else if (_signedIn)
             @if (_showWelcome)
             {
                 <div class="welcome-notice" role="status">
-                    <div><strong>Welcome to ContentManagement!</strong><span>Your account is ready. You can now access your workspace.</span></div>
+                    <div><strong>@(_registrationWelcome ? "Congratulations! Your account registration was successful." : "Welcome to ContentManagement!")</strong><span>@(_registrationWelcome ? "Your email is verified and your account is active. You can now access your workspace." : "Your account is ready. You can now access your workspace.")</span></div>
                     <button type="button" aria-label="Dismiss welcome message" @onclick="DismissWelcome">×</button>
                 </div>
             }
@@ -133,6 +133,7 @@ else
     private bool _signedIn;
     private bool _isAdministrator;
     private bool _showWelcome;
+    private bool _registrationWelcome;
     private bool _busy;
     private HashSet<string> _permissions = new(StringComparer.Ordinal);
     private string _email = "";
@@ -141,6 +142,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _showWelcome = Navigation.Uri.Contains("welcome=1", StringComparison.OrdinalIgnoreCase);
+        _registrationWelcome = Navigation.Uri.Contains("welcome=registered", StringComparison.OrdinalIgnoreCase);
         try
         {
             using var response = await Http.GetAsync("api/auth/me");
