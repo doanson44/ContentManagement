@@ -2,18 +2,18 @@
 
 ContentManagement is a modular-monolith foundation for centralized content storage. The browser UI uses Blazor WebAssembly CSR; the ASP.NET Core server hosts the compiled client assets and HTTP API.
 
-## Current baseline
+## Implemented foundation
 
-Implemented:
-- Separate ContentManagement.Client and ContentManagement.Server application projects.
+- Exactly two application projects: `ContentManagement.Client` and `ContentManagement.Server`.
 - Server-hosted Blazor WebAssembly static assets and client-side routing.
-- Minimal GET /api/health endpoint.
-- Startup validation for baseline content settings.
-- Unit tests for configuration validation.
-- Docker SQL Server connectivity integration test.
+- EF Core SQL Server context and initial migration for binary metadata and compressed JSON records.
+- GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
+- Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
+- Lifecycle status enum and SQL row-version concurrency tokens.
+- Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 
-File storage, JSON document persistence, authentication, authorization, lifecycle cleanup, and administrative workflows are not implemented yet.
+Authentication/authorization, public file/JSON APIs, complete lifecycle orchestration, cleanup/recovery jobs, and administrative workflows are not implemented. Storage and compression services are internal foundations and must not be exposed without server-side authorization and resource-level access checks.
 
 ## Requirements
 
@@ -47,14 +47,22 @@ Use a local-only test password and do not commit credentials. CI uses a disposab
 dotnet run --project src/ContentManagement.Server/ContentManagement.Server.csproj
 ```
 
-The server hosts the client at / and the health endpoint at /api/health. HTTPS redirection may require trusting the local development certificate.
+The server hosts the client at `/` and the health endpoint at `/api/health`. HTTPS redirection may require trusting the local development certificate.
 
 ## Configuration
 
-The ContentManagement section supports StorageRoot, a filesystem root intended for future binary storage, and MaxUploadBytes, a positive upload limit defaulting to 100 MiB. These settings are groundwork only; no upload or filesystem storage API is implemented yet. Override through standard ASP.NET Core providers, for example ContentManagement__StorageRoot and ContentManagement__MaxUploadBytes.
+The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Configure SQL with `ConnectionStrings__ContentManagement`. Migrations are not applied automatically; apply reviewed migrations during deployment after a backup.
+
+## Data and storage notes
+
+- Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server.
+- JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
+- SHA-256 is integrity metadata, not an authentication token.
+- Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
+- Do not expose storage services through APIs until authentication, authorization, rate limits, and resource ownership checks exist.
 
 ## Windows x86 package
 
-The CI workflow publishes the server as a self-contained win-x86 application, includes the hosted WebAssembly assets, validates required output files, and uploads ContentManagement-win-x86.zip as a workflow artifact.
+CI publishes the server as a self-contained `win-x86` application, includes hosted WebAssembly assets, validates required output files, and uploads `ContentManagement-win-x86.zip` as a workflow artifact.
 
 Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. This baseline does not automatically apply database migrations.
