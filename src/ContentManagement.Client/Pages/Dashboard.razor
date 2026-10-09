@@ -141,7 +141,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _showWelcome = Navigation.Uri.Contains("welcome=1", StringComparison.OrdinalIgnoreCase);
+        _showWelcome = Navigation.Uri.Contains("welcome=1", StringComparison.OrdinalIgnoreCase) ||
+            Navigation.Uri.Contains("welcome=registered", StringComparison.OrdinalIgnoreCase);
         _registrationWelcome = Navigation.Uri.Contains("welcome=registered", StringComparison.OrdinalIgnoreCase);
         try
         {
