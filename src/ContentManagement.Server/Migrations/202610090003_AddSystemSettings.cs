@@ -33,10 +33,6 @@ public sealed class AddSystemSettings : Migration
             },
             constraints: table => table.PrimaryKey("PK_SystemSettings", x => x.Id));
 
-        migrationBuilder.InsertData(
-            table: "SystemSettings",
-            columns: new[] { "Id", "SmtpHost", "SmtpPort", "SmtpUseSsl", "SmtpUsername", "SmtpPassword", "SmtpFromEmail", "SmtpFromName", "TestRecipientEmail", "StaleFileAgeDays", "CleanupIntervalHours", "DeletionGracePeriodDays", "UpdatedUtc", "LastCleanupUtc" },
-            values: new object[] { 1, "", 587, true, "", "", "", "ContentManagement", "", 90, 24, 7, new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc), null });
     }
 
     protected override void Down(MigrationBuilder migrationBuilder) =>
