@@ -30,7 +30,7 @@ public sealed class SmtpEmailSender(
             DeliveryMethod = SmtpDeliveryMethod.Network,
             UseDefaultCredentials = false,
             Credentials = string.IsNullOrEmpty(settings.Username)
-                ? CredentialCache.DefaultNetworkCredentials
+                ? null
                 : new NetworkCredential(settings.Username, settings.Password)
         };
         cancellationToken.ThrowIfCancellationRequested();
