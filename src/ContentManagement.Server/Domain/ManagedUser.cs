@@ -6,7 +6,8 @@ public enum ManagedUserStatus
 {
     Invited = 0,
     Active = 1,
-    Disabled = 2
+    Disabled = 2,
+    PendingEmailVerification = 3
 }
 
 public sealed class ManagedUser
@@ -25,6 +26,11 @@ public sealed class ManagedUser
     public string? InvitationTokenHash { get; set; }
 
     public DateTime? InvitationExpiresUtc { get; set; }
+
+    [MaxLength(64)]
+    public string? RegistrationTokenHash { get; set; }
+
+    public DateTime? RegistrationExpiresUtc { get; set; }
 
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
