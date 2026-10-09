@@ -23,7 +23,7 @@ else if (_signedIn)
             }
             @if (CanAccessFiles)
             {
-                <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
+                <a class="sidebar-link" href="/dashboard/files"><span>▤</span> Files</a>
             }
             @if (CanAccessJson)
             {
@@ -91,9 +91,9 @@ else if (_signedIn)
                 {
                     <article class="module-card">
                         <div class="module-icon files-icon">▤</div>
-                        <div class="module-card-heading"><h3>File management</h3><span class="module-status">Planned</span></div>
+                        <div class="module-card-heading"><h3>File management</h3><span class="module-status">Available</span></div>
                         <p>Browse file metadata, inspect status, and manage stored binary content.</p>
-                        <div class="module-footer"><span>Binary assets</span><span class="module-arrow">↗</span></div>
+                        <div class="module-footer"><span>Binary assets</span><a href="/dashboard/files" aria-label="Open file management">Open ↗</a></div>
                     </article>
                 }
                 @if (CanAccessJson)
