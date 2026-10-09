@@ -134,7 +134,7 @@ $env:Hangfire__Enabled = "true"
 $env:ConnectionStrings__Hangfire = "Server=sql.example;Database=ContentManagementJobs;User Id=...;Password=...;Encrypt=True;TrustServerCertificate=False"
 ```
 
-Use a dedicated database/login with least-privilege access and a valid trusted SQL Server certificate in production. Hangfire creates/updates its schema when enabled; plan database permissions and deployment accordingly. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. No recurring jobs or cleanup tasks are registered yet; this setup provides the infrastructure for adding them in a later increment. If Hangfire is disabled, the application does not require `ConnectionStrings:Hangfire`.
+Use a dedicated database/login with least-privilege access and a valid trusted SQL Server certificate in production. Hangfire creates/updates its schema when enabled; plan database permissions and deployment accordingly. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. The stale-file cleanup job is registered when Hangfire is enabled. If Hangfire is disabled, cleanup does not run and the application does not require `ConnectionStrings:Hangfire`.
 
 
 ### Dashboard setup
@@ -142,6 +142,8 @@ Use a dedicated database/login with least-privilege access and a valid trusted S
 After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to configure SMTP, send a test email, and set stale-file cleanup policy.
 
 SMTP configuration is stored in the SQL Server `SystemSettings` row and used for OTP and test email delivery. The API does not return the saved password; leave the password field blank to retain the existing value. In this initial version, the SMTP password is stored without application-level encryption, so restrict database access and backups.
+
+For direct database setup, edit the placeholders in [`scripts/setup-email-config.sql`](scripts/setup-email-config.sql) and run it against the application database after applying migration `202610090003_AddSystemSettings`. The script upserts the singleton settings row, preserves the cleanup defaults (90-day stale age, 24-hour interval, 7-day grace period), and prints only non-secret configuration fields for verification. Do not put real SMTP credentials in a committed script.
 
 Default cleanup policy: files older than 90 days are eligible, the worker checks every 24 hours, and marked files wait 7 days before deletion. Hangfire polls hourly and runs when the configured interval has elapsed. The worker marks eligible files first and deletes the binary plus metadata only after the grace period. Each run is bounded to 500 marked files and 100 deletions. Cleanup runs only when Hangfire is enabled and configured.
 
