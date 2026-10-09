@@ -40,7 +40,7 @@ public sealed class StaleFileCleanupJob(
 
         var deletionBefore = now.AddDays(-settings.DeletionGracePeriodDays);
         var readyForDeletion = await db.Files
-            .Where(file => file.Status == ContentStatus.MarkedForDeletion && file.UpdatedUtc <= deletionBefore)
+            .Where(file => (file.Status == ContentStatus.MarkedForDeletion || file.Status == ContentStatus.Deleting) && file.UpdatedUtc <= deletionBefore)
             .OrderBy(file => file.UpdatedUtc)
             .Take(100)
             .ToListAsync(cancellationToken);
