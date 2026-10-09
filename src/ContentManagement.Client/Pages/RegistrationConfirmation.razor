@@ -1,0 +1,70 @@
+@page "/register/confirm"
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Verify email · ContentManagement</PageTitle>
+
+<section class="login-shell">
+    <div class="login-brand">
+        <div class="brand-mark">CM</div>
+        <p class="eyebrow">CONTENT MANAGEMENT</p>
+        <h1>Verify your email</h1>
+        <p class="login-subtitle">Confirm your email address to activate your account.</p>
+    </div>
+    <div class="login-card">
+        @if (_busy)
+        {
+            <h2>Verifying your email…</h2>
+            <p class="muted">Please wait while we securely verify your registration link.</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <h2>Unable to verify email</h2>
+            <p class="form-message error" role="alert">@_message</p>
+            <p class="fine-print"><a href="/register">Request a new registration link</a></p>
+        }
+        else
+        {
+            <h2>Email verified</h2>
+            <p class="muted">Your account is active. Redirecting to your dashboard…</p>
+        }
+    </div>
+    <footer>Secure email verification · ContentManagement</footer>
+</section>
+
+@code {
+    private string _message = "";
+    private bool _busy = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var tokenPair = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .FirstOrDefault(parts => parts.Length == 2 && string.Equals(Uri.UnescapeDataString(parts[0]), "token", StringComparison.Ordinal));
+        var token = tokenPair is null ? "" : Uri.UnescapeDataString(tokenPair[1].Replace("+", "%20", StringComparison.Ordinal));
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _message = "This verification link is missing its token.";
+            _busy = false;
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/auth/confirm-registration", new { Token = token });
+            if (!response.IsSuccessStatusCode)
+            {
+                _message = "This registration link is invalid, expired, or already used. Request a new link and try again.";
+                return;
+            }
+            Navigation.NavigateTo("/dashboard?welcome=registered", forceLoad: true, replace: true);
+        }
+        catch (HttpRequestException)
+        {
+            _message = "Unable to connect to the server. Please try again.";
+        }
+        finally { _busy = false; }
+    }
+}
