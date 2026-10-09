@@ -127,7 +127,7 @@ builder.Services.AddAuthentication(options =>
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
         };
-        options.Events.OnValidatePrincipal = context =>
+        options.Events.OnValidatePrincipal = async context =>
         {
             var principal = context.Principal;
             var adminEmail = principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -136,9 +136,8 @@ builder.Services.AddAuthentication(options =>
                 !allowedAdminEmails.Contains(adminEmail, StringComparer.OrdinalIgnoreCase))
             {
                 context.RejectPrincipal();
-                context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             }
-            return Task.CompletedTask;
         };
     });
 
