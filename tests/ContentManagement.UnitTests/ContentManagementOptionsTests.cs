@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using ContentManagement.Server.Configuration;
+using Xunit;
+
 namespace ContentManagement.UnitTests;
 public sealed class ContentManagementOptionsTests
 {

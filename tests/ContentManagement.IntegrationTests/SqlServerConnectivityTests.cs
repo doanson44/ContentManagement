@@ -1,4 +1,6 @@
 using Microsoft.Data.SqlClient;
+using Xunit;
+
 namespace ContentManagement.IntegrationTests;
 public sealed class SqlServerConnectivityTests
 {
