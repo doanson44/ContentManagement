@@ -34,7 +34,7 @@ else if (_signedIn)
                 <div>
                     <p class="dashboard-eyebrow">SYSTEM CONFIGURATION</p>
                     <h1>Setup</h1>
-                    <p class="dashboard-subtitle">Configure outbound email and stale-file cleanup policy.</p>
+                    <p class="dashboard-subtitle">Configure when stale files are marked for removal and permanently deleted.</p>
                 </div>
                 <div class="session-pill"><span></span> Admin session active</div>
             </header>
@@ -43,20 +43,6 @@ else if (_signedIn)
             {
                 <div class="setup-notice @(_isError ? "error" : "success")" role="status">@_message</div>
             }
-
-            <section class="setup-card">
-                <div class="setup-section-heading">
-                    <div class="setup-section-icon email-setup-icon">✉</div>
-                    <div><h2>Email delivery</h2><p>SMTP settings are loaded from the server's appsettings configuration and environment variables, not stored in the database.</p></div>
-                </div>
-                <div class="setup-form-grid">
-                    <label>Test recipient<input type="email" @bind="_model.TestRecipientEmail" placeholder="you@example.com" /></label>
-                </div>
-                <p class="setup-hint">Configure the server's <code>Smtp</code> section, then restart the application if configuration providers do not reload automatically.</p>
-                <div class="setup-actions">
-                    <button class="setup-secondary" @onclick="TestEmailAsync" disabled="@_busy">Test send</button>
-                </div>
-            </section>
 
             <section class="setup-card">
                 <div class="setup-section-heading">
@@ -85,7 +71,6 @@ else
     private bool _signedIn;
     private bool _busy;
     private bool _isError;
-    private bool _hasPassword;
     private string _email = "";
     private string _message = "";
     private SetupModel _model = new();
@@ -100,6 +85,7 @@ else
                 Navigation.NavigateTo("/", replace: true);
                 return;
             }
+
             var session = await sessionResponse.Content.ReadFromJsonAsync<SessionResponse>();
             _email = session?.Email ?? "";
             _signedIn = !string.IsNullOrWhiteSpace(_email);
@@ -112,26 +98,19 @@ else
             using var response = await Http.GetAsync("api/admin/setup");
             if (!response.IsSuccessStatusCode)
             {
-                SetMessage("Unable to load setup settings.", true);
+                SetMessage("Unable to load cleanup settings.", true);
                 return;
             }
+
             var settings = await response.Content.ReadFromJsonAsync<SetupResponse>();
             if (settings is not null)
             {
                 _model = new SetupModel
                 {
-                    SmtpHost = settings.SmtpHost,
-                    SmtpPort = settings.SmtpPort,
-                    SmtpUseSsl = settings.SmtpUseSsl,
-                    SmtpUsername = settings.SmtpUsername,
-                    SmtpFromEmail = settings.SmtpFromEmail,
-                    SmtpFromName = settings.SmtpFromName,
-                    TestRecipientEmail = settings.TestRecipientEmail,
                     StaleFileAgeDays = settings.StaleFileAgeDays,
                     CleanupIntervalHours = settings.CleanupIntervalHours,
                     DeletionGracePeriodDays = settings.DeletionGracePeriodDays
                 };
-                _hasPassword = settings.HasSmtpPassword;
             }
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
@@ -149,33 +128,11 @@ else
             if (!response.IsSuccessStatusCode)
             {
                 var problem = await response.Content.ReadFromJsonAsync<ApiMessage>();
-                SetMessage(problem?.Message ?? "Unable to save setup settings.", true);
+                SetMessage(problem?.Message ?? "Unable to save cleanup settings.", true);
                 return;
             }
-            var saved = await response.Content.ReadFromJsonAsync<SetupResponse>();
-            _hasPassword = saved?.HasSmtpPassword ?? _hasPassword;
-            _model.SmtpPassword = "";
-            SetMessage("Setup settings saved.", false);
-        }
-        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
-        finally { _busy = false; }
-    }
 
-    private async Task TestEmailAsync()
-    {
-        if (_busy) return;
-        if (string.IsNullOrWhiteSpace(_model.TestRecipientEmail))
-        {
-            SetMessage("Enter a test recipient email address.", true);
-            return;
-        }
-        _busy = true;
-        _message = "";
-        try
-        {
-            using var response = await Http.PostAsJsonAsync("api/admin/setup/test-email", new TestEmailRequest(_model.TestRecipientEmail));
-            var result = await response.Content.ReadFromJsonAsync<ApiMessage>();
-            SetMessage(result?.Message ?? (response.IsSuccessStatusCode ? "Test email sent." : "Test email failed. Check server logs."), !response.IsSuccessStatusCode);
+            SetMessage("Cleanup settings saved.", false);
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
@@ -201,22 +158,12 @@ else
 
     private sealed class SetupModel
     {
-        public string SmtpHost { get; set; } = "";
-        public int SmtpPort { get; set; } = 587;
-        public bool SmtpUseSsl { get; set; } = true;
-        public string SmtpUsername { get; set; } = "";
-        public string SmtpPassword { get; set; } = "";
-        public string SmtpFromEmail { get; set; } = "";
-        public string SmtpFromName { get; set; } = "ContentManagement";
-        public string TestRecipientEmail { get; set; } = "";
         public int StaleFileAgeDays { get; set; } = 90;
         public int CleanupIntervalHours { get; set; } = 24;
         public int DeletionGracePeriodDays { get; set; } = 7;
     }
+
     private sealed record SessionResponse(string Email);
-    private sealed record SetupResponse(string SmtpHost, int SmtpPort, bool SmtpUseSsl, string SmtpUsername,
-        bool HasSmtpPassword, string SmtpFromEmail, string SmtpFromName, string TestRecipientEmail,
-        int StaleFileAgeDays, int CleanupIntervalHours, int DeletionGracePeriodDays, DateTime UpdatedUtc);
-    private sealed record TestEmailRequest(string RecipientEmail);
+    private sealed record SetupResponse(int StaleFileAgeDays, int CleanupIntervalHours, int DeletionGracePeriodDays);
     private sealed record ApiMessage(string? Message);
 }
