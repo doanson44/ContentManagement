@@ -3,7 +3,6 @@ using ContentManagement.Server.BackgroundJobs;
 using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
-using ContentManagement.Server.Domain;
 using ContentManagement.Server.Storage;
 using Hangfire;
 using Hangfire.SqlServer;
@@ -128,58 +127,18 @@ builder.Services.AddAuthentication(options =>
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
         };
-        options.Events.OnValidatePrincipal = async context =>
+        options.Events.OnValidatePrincipal = context =>
         {
             var principal = context.Principal;
-            if (principal?.IsInRole("Administrator") == true)
-            {
-                var adminEmail = principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
-                if (string.IsNullOrWhiteSpace(adminEmail) ||
-                    !allowedAdminEmails.Contains(adminEmail, StringComparer.OrdinalIgnoreCase))
-                {
-                    context.RejectPrincipal();
-                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                }
-                return;
-            }
-
-            if (principal?.IsInRole("User") != true)
-                return;
-
-            var email = principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
-            var db = context.HttpContext.RequestServices.GetService<ContentManagementDbContext>();
-            var user = string.IsNullOrWhiteSpace(email) || db is null
-                ? null
-                : await db.ManagedUsers.AsNoTracking().SingleOrDefaultAsync(
-                    item => item.Email == email && item.Status == ManagedUserStatus.Active,
-                    context.HttpContext.RequestAborted);
-
-            if (user is null)
+            var adminEmail = principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            if (principal?.IsInRole("Administrator") != true ||
+                string.IsNullOrWhiteSpace(adminEmail) ||
+                !allowedAdminEmails.Contains(adminEmail, StringComparer.OrdinalIgnoreCase))
             {
                 context.RejectPrincipal();
-                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return;
+                context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             }
-
-            var permissions = (System.Text.Json.JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [])
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(permission => permission, StringComparer.Ordinal)
-                .ToArray();
-            var currentPermissions = principal.FindAll("scope")
-                .Select(claim => claim.Value)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(permission => permission, StringComparer.Ordinal)
-                .ToArray();
-            if (currentPermissions.SequenceEqual(permissions, StringComparer.Ordinal))
-                return;
-
-            var claims = principal.Claims
-                .Where(claim => claim.Type != "scope")
-                .ToList();
-            claims.AddRange(permissions.Select(permission => new System.Security.Claims.Claim("scope", permission)));
-            var identity = new System.Security.Claims.ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-            context.ReplacePrincipal(new System.Security.Claims.ClaimsPrincipal(identity));
-            context.ShouldRenew = true;
+            return Task.CompletedTask;
         };
     });
 
@@ -210,16 +169,6 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 3,
-                Window = TimeSpan.FromMinutes(10),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-    options.AddPolicy("invitation-accept", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(10),
                 QueueLimit = 0,
                 AutoReplenishment = true
