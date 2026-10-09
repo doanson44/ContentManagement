@@ -101,6 +101,11 @@ public sealed class AdminUsersController(
         if (!Enum.TryParse<ManagedUserStatus>(request.Status, ignoreCase: true, out var status) || !Enum.IsDefined(status))
             return BadRequest(new { message = "Unsupported user status." });
 
+        if (status == ManagedUserStatus.Active && user.Status == ManagedUserStatus.Invited && user.ActivatedUtc is null)
+            return BadRequest(new { message = "The user must accept the email invitation before activation." });
+        if (status == ManagedUserStatus.Invited && user.Status != ManagedUserStatus.Invited)
+            return BadRequest(new { message = "Send a new invitation to return a user to invited status." });
+
         user.Status = status;
         user.PermissionsJson = JsonSerializer.Serialize(permissions);
         user.UpdatedUtc = DateTime.UtcNow;
