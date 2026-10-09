@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Storage;
 using Microsoft.Extensions.Options;
