@@ -136,6 +136,21 @@ $env:ConnectionStrings__Hangfire = "Server=sql.example;Database=ContentManagemen
 
 Use a dedicated database/login with least-privilege access and a valid trusted SQL Server certificate in production. Hangfire creates/updates its schema when enabled; plan database permissions and deployment accordingly. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. No recurring jobs or cleanup tasks are registered yet; this setup provides the infrastructure for adding them in a later increment. If Hangfire is disabled, the application does not require `ConnectionStrings:Hangfire`.
 
+
+### Dashboard setup
+
+After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to configure SMTP, send a test email, and set stale-file cleanup policy.
+
+SMTP configuration is stored in the SQL Server `SystemSettings` row and used for OTP and test email delivery. The API does not return the saved password; leave the password field blank to retain the existing value. In this initial version, the SMTP password is stored without application-level encryption, so restrict database access and backups.
+
+Default cleanup policy: files older than 90 days are eligible, the worker checks every 24 hours, and marked files wait 7 days before deletion. Hangfire polls hourly and runs when the configured interval has elapsed. The worker marks eligible files first and deletes the binary plus metadata only after the grace period. Each run is bounded to 500 marked files and 100 deletions. Cleanup runs only when Hangfire is enabled and configured.
+
+Apply migrations after backing up the database:
+
+```bash
+dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
+```
+
 ## Administrator dashboard
 
 After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, files, and JSON documents. Each API client will carry its own granted scopes, so permissions are configured within API client management rather than as a separate dashboard module. These management screens are placeholders for subsequent increments; the dashboard does not imply that CRUD APIs or client management have already been implemented.
