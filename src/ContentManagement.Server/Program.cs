@@ -147,11 +147,18 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 
-    foreach (var scope in new[]
+    // Browser administrator endpoints use the HttpOnly admin cookie; machine-to-machine
+    // callers must still present an API key carrying the exact scope.
+    foreach (var scope in new[] { ScopePolicies.FilesRead, ScopePolicies.FilesWrite, ScopePolicies.FilesDelete })
     {
-        ScopePolicies.FilesRead, ScopePolicies.FilesWrite, ScopePolicies.FilesDelete,
-        ScopePolicies.JsonRead, ScopePolicies.JsonWrite, ScopePolicies.JsonDelete
-    })
+        options.AddPolicy(scope, policy => policy
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context =>
+                context.User.IsInRole("Administrator") ||
+                context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == scope)));
+    }
+
+    foreach (var scope in new[] { ScopePolicies.JsonRead, ScopePolicies.JsonWrite, ScopePolicies.JsonDelete })
     {
         options.AddPolicy(scope, policy => policy
             .RequireAuthenticatedUser()
