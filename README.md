@@ -29,7 +29,7 @@ Use a secret manager or protected environment variables in production; never emb
 
 Supported scopes are `files.read`, `files.write`, `files.delete`, `json.read`, `json.write`, and `json.delete`. Grant only required scopes. Apply a policy such as `[Authorize(Policy = ScopePolicies.FilesRead)]` on each corresponding controller action. The fallback authorization policy requires authentication for all endpoints unless explicitly marked `[AllowAnonymous]`.
 
-This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client registration, hashed secret storage, rotation/revocation, OAuth 2.0 client credentials, token issuance, admin OTP login, and browser-admin sessions are not implemented. Do not use this API key as a browser login credential.
+This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client API client registration, hashed client-secret storage, rotation/revocation, and OAuth 2.0 client credentials are not implemented. Browser administrator and managed-user sessions are separate from this API-key mode. Do not use this API key as a browser login credential.
 
 ## Administrator email OTP login
 
