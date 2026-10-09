@@ -124,6 +124,11 @@ else
             _email = session?.Email ?? "";
             _signedIn = !string.IsNullOrWhiteSpace(_email);
             if (!_signedIn) { Navigation.NavigateTo("/", replace: true); return; }
+            if (!string.Equals(session?.Role, "Administrator", StringComparison.Ordinal))
+            {
+                Navigation.NavigateTo("/dashboard", replace: true);
+                return;
+            }
             await LoadUsersAsync();
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
@@ -224,7 +229,7 @@ else
         catch { return "Request failed."; }
     }
 
-    private sealed record SessionResponse(string Email);
+    private sealed record SessionResponse(string Email, string? Role);
     private sealed record ApiMessage(string? Message, string? Title);
     private sealed record UserRow(Guid Id, string Email, string Status, string[] Permissions, DateTime CreatedUtc,
         DateTime? InvitedUtc, DateTime? InvitationExpiresUtc, DateTime? ActivatedUtc, DateTime? LastLoginUtc);
