@@ -130,10 +130,23 @@ builder.Services.AddAuthentication(options =>
         };
         options.Events.OnValidatePrincipal = async context =>
         {
-            if (context.Principal?.IsInRole("User") != true)
+            var principal = context.Principal;
+            if (principal?.IsInRole("Administrator") == true)
+            {
+                var adminEmail = principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+                if (string.IsNullOrWhiteSpace(adminEmail) ||
+                    !allowedAdminEmails.Contains(adminEmail, StringComparer.OrdinalIgnoreCase))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                }
+                return;
+            }
+
+            if (principal?.IsInRole("User") != true)
                 return;
 
-            var email = context.Principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            var email = principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
             var db = context.HttpContext.RequestServices.GetService<ContentManagementDbContext>();
             var user = string.IsNullOrWhiteSpace(email) || db is null
                 ? null
@@ -148,7 +161,7 @@ builder.Services.AddAuthentication(options =>
                 return;
             }
 
-            var claims = context.Principal.Claims
+            var claims = principal.Claims
                 .Where(claim => claim.Type != "scope")
                 .ToList();
             var permissions = System.Text.Json.JsonSerializer.Deserialize<string[]>(user.PermissionsJson) ?? [];
