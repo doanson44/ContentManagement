@@ -120,8 +120,8 @@ public sealed class FilesController(
         try
         {
             var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
-            Response.Headers.ContentDisposition = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
-            Response.Headers.XContentTypeOptions = "nosniff";
+            Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
             return File(stream, SafeContentType(file.ContentType), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
