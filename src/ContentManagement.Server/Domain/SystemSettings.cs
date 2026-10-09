@@ -35,4 +35,6 @@ public sealed class SystemSettings
     public int DeletionGracePeriodDays { get; set; } = 7;
 
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+
+    public DateTime? LastCleanupUtc { get; set; }
 }
