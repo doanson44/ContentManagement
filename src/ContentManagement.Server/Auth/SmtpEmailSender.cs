@@ -13,11 +13,6 @@ public sealed class SmtpEmailSender(
             $"Your one-time sign-in code is {code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.",
             cancellationToken);
 
-    public Task SendInvitationAsync(string email, string invitationUrl, CancellationToken cancellationToken) =>
-        SendAsync(email, "You're invited to ContentManagement",
-            $"You have been invited to ContentManagement. Accept your invitation using this link (valid for 48 hours):\n\n{invitationUrl}\n\nIf you were not expecting this invitation, you can ignore this email.",
-            cancellationToken);
-
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
         var configured = options.Value;
