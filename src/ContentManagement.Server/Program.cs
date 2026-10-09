@@ -3,14 +3,24 @@ using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Storage;
+using Hangfire;
+using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "ContentManagement.Server"));
+
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 
@@ -41,12 +51,44 @@ builder.Services.AddOptions<AdminAuthOptions>()
         "AdminAuth:OtpHashKey must contain at least 32 characters when admin email sign-in is enabled.")
     .ValidateOnStart();
 
+var allowedAdminEmails = builder.Configuration.GetSection("AdminAuth:AllowedEmails").Get<string[]>() ?? [];
 builder.Services.AddOptions<SmtpOptions>()
-    .Bind(builder.Configuration.GetSection(SmtpOptions.SectionName));
+    .Bind(builder.Configuration.GetSection(SmtpOptions.SectionName))
+    .Validate(options => options.Port is >= 1 and <= 65535, "Smtp:Port must be a valid TCP port.")
+    .Validate(options => allowedAdminEmails.Length == 0 ||
+        (!string.IsNullOrWhiteSpace(options.Host) &&
+         System.Net.Mail.MailAddress.TryCreate(options.FromEmail, out _)),
+        "Smtp:Host and a valid Smtp:FromEmail are required when admin email sign-in is enabled.")
+    .Validate(options => string.IsNullOrWhiteSpace(options.Username) || !string.IsNullOrWhiteSpace(options.Password),
+        "Smtp:Password is required when Smtp:Username is configured.")
+    .ValidateOnStart();
 
 var connectionString = builder.Configuration.GetConnectionString("ContentManagement");
 if (!string.IsNullOrWhiteSpace(connectionString))
     builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
+
+var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
+if (hangfireEnabled)
+{
+    var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfire");
+    if (string.IsNullOrWhiteSpace(hangfireConnectionString))
+        throw new InvalidOperationException("ConnectionStrings:Hangfire must be configured when Hangfire:Enabled is true.");
+
+    builder.Services.AddHangfire(configuration => configuration
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSqlServerStorage(hangfireConnectionString, new SqlServerStorageOptions
+        {
+            PrepareSchemaIfNecessary = true,
+            QueuePollInterval = TimeSpan.FromSeconds(15),
+            SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+            CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+            UseRecommendedIsolationLevel = true,
+            DisableGlobalLocks = true
+        }));
+    builder.Services.AddHangfireServer();
+}
 
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
 builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
@@ -132,6 +174,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+app.UseSerilogRequestLogging();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler();
@@ -166,6 +209,15 @@ app.UseStaticFiles();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+if (hangfireEnabled)
+{
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = [new AdminDashboardAuthorizationFilter()]
+    });
+}
+
 app.MapControllers();
 app.MapGet("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
