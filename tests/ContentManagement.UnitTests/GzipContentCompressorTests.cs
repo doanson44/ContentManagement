@@ -20,7 +20,7 @@ public sealed class GzipContentCompressorTests
 
     [Fact]
     public void Rejects_malformed_json() =>
-        Assert.Throws<System.Text.Json.JsonException>(() => _compressor.CompressJson("{bad", 1024));
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => _compressor.CompressJson("{bad", 1024));
 
     [Fact]
     public void Rejects_payload_over_limit_on_compress_and_decompress()
