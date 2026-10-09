@@ -114,3 +114,8 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 CI publishes the server as a self-contained `win-x86` application, includes hosted WebAssembly assets, validates required output files, and uploads `ContentManagement-win-x86.zip` as a workflow artifact.
 
 Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. This baseline does not automatically apply database migrations.
+
+## Administrator dashboard
+
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the server session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It currently provides the workspace overview and navigation layout for API clients, permissions, files, and JSON documents. These four management screens are placeholders for subsequent increments; the dashboard does not imply that CRUD APIs or client/role management have already been implemented.
+
