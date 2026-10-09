@@ -66,7 +66,7 @@ public sealed class FilesController(
         var entity = new StoredFile
         {
             Id = Guid.NewGuid(),
-            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace('\\\\', '/')).Trim(),
+            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
             ContentType = SafeContentType(file.ContentType),
             StorageKey = binary.StorageKey,
             SizeBytes = binary.SizeBytes,
