@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace ContentManagement.Server.Auth;
 
 public sealed class SmtpEmailSender(
-    ContentManagementDbContext db,
+    IServiceProvider services,
     IOptions<SmtpOptions> options,
     ILogger<SmtpEmailSender> logger) : IEmailSender
 {
@@ -23,7 +23,10 @@ public sealed class SmtpEmailSender(
 
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
-        var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+        var db = services.GetService<ContentManagementDbContext>();
+        var settings = db is null
+            ? null
+            : await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
         var configured = settings is not null && !string.IsNullOrWhiteSpace(settings.SmtpHost)
             ? new SmtpOptions
             {
