@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using ContentManagement.Server.Auth;
 using Hangfire;
