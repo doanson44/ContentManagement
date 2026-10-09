@@ -10,4 +10,5 @@ public sealed class AdminAuthOptions
     public int ResendCooldownSeconds { get; set; } = 60;
     public int SessionLifetimeHours { get; set; } = 8;
     public string[] AllowedOrigins { get; set; } = [];
+    public string PublicBaseUrl { get; set; } = "";
 }
