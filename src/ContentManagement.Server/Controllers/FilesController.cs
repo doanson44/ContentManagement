@@ -39,11 +39,16 @@ public sealed class FilesController(
         }
         if (status.HasValue) query = query.Where(f => f.Status == status.Value);
         var total = await query.LongCountAsync(cancellationToken);
-        var items = await query.OrderByDescending(f => f.CreatedUtc)
+        var rows = await query.OrderByDescending(f => f.CreatedUtc)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
-                f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion)))
+            .Select(f => new
+            {
+                f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+                f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
+            })
             .ToListAsync(cancellationToken);
+        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion))).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
