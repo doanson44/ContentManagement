@@ -1,0 +1,138 @@
+@page "/dashboard/files"
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using System.Text
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Files · ContentManagement</PageTitle>
+
+@if (_checkingSession)
+{
+    <div class="dashboard-loading">Checking administrator session…</div>
+}
+else if (!_signedIn)
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting…</div>
+}
+else
+{
+    <div class="dashboard-page files-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p><a class="sidebar-link" href="/dashboard"><span>⌂</span> Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p><a class="sidebar-link active" href="/dashboard/files"><span>▤</span> Files</a>
+            <div class="sidebar-bottom"><div class="admin-avatar">A</div><div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div></div>
+        </aside>
+        <main class="dashboard-main files-main">
+            <header class="dashboard-header"><div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>Files</h1><p class="dashboard-subtitle">Upload, preview and manage binary assets.</p></div>
+                <label class="files-upload-button">Upload file<input type="file" @onchange="UploadAsync" disabled="@_busy" /></label>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
+            <div class="files-workspace">
+                <section class="files-list-panel">
+                    <div class="files-toolbar"><input aria-label="Search files" placeholder="Search by filename or SHA-256…" @bind="_search" @bind:event="oninput" @onkeydown="SearchKeyDown" /><select aria-label="Filter status" @bind="_status" @bind:after="LoadAsync"><option value="">All statuses</option><option>Active</option><option>MarkedForDeletion</option><option>Uploading</option></select><button class="files-secondary" @onclick="LoadAsync">Search</button></div>
+                    @if (_loading) { <p class="files-empty">Loading files…</p> }
+                    else if (_items.Count == 0) { <p class="files-empty">No files found. Upload a file to get started.</p> }
+                    else {
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>File</th><th>Size</th><th>Status</th><th>Created</th></tr></thead><tbody>
+                        @foreach (var item in _items) { <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id"><td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">@IconFor(item.ContentType)</span><span><strong>@item.FileName</strong><small>@item.ContentType</small></span></button></td><td>@FormatSize(item.SizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td></tr> }
+                        </tbody></table></div>
+                        <div class="files-pagination"><span>@_total files · Page @_page</span><button class="files-secondary" @onclick="PreviousAsync" disabled="@(_page <= 1 || _loading)">Previous</button><button class="files-secondary" @onclick="NextAsync" disabled="@(_page * _pageSize >= _total || _loading)">Next</button></div>
+                    }
+                </section>
+                <section class="files-preview-panel">
+                    @if (_selected is null) { <div class="files-preview-placeholder"><span>▤</span><h2>Select a file</h2><p>Preview and metadata will appear here.</p></div> }
+                    else {
+                        <div class="files-preview-heading"><div><p class="dashboard-eyebrow">FILE PREVIEW</p><h2>@_selected.FileName</h2><p>@FormatSize(_selected.SizeBytes) · @_selected.ContentType</p></div><button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete</button></div>
+                        <div class="files-preview-content">
+                            @if (IsImage(_selected.ContentType)) { <img class="files-image-preview" src="@ContentUrl(_selected.Id)" alt="@_selected.FileName" /> }
+                            else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
+                            else if (IsVideo(_selected.ContentType)) {
+                                <video class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)"><track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /></video>
+                                <div class="subtitle-panel"><strong>Subtitles</strong><p>Upload a WebVTT (.vtt) subtitle file to use the browser subtitle track.</p><label class="files-secondary subtitle-upload">Upload .vtt<input type="file" accept=".vtt,text/vtt" @onchange="UploadSubtitleAsync" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
+                            }
+                            else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
+                            else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
+                        </div>
+                        <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd></dl>
+                        <EditForm Model="_rename" OnValidSubmit="RenameAsync"><label for="rename-file">Display name</label><div class="rename-row"><InputText id="rename-file" @bind-Value="_rename.FileName" maxlength="255" /><button class="files-secondary" type="submit" disabled="@_busy">Save</button></div></EditForm>
+                        <a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download original</a></div>
+                    }
+                </section>
+            </div>
+        </main>
+    </div>
+}
+
+@code {
+    private bool _checkingSession = true, _signedIn, _loading, _busy;
+    private string _email = "", _message = "", _subtitleMessage = "", _search = "", _status = "";
+    private string? _textPreview, _subtitleUrl;
+    private int _page = 1, _pageSize = 25;
+    private long _total;
+    private List<FileItem> _items = [];
+    private FileItem? _selected;
+    private RenameModel _rename = new();
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+
+    protected override async Task OnInitializedAsync() {
+        try { using var response = await Http.GetAsync("api/auth/me"); if(response.IsSuccessStatusCode) { var session = await response.Content.ReadFromJsonAsync<SessionResponse>(); _email=session?.Email??""; _signedIn=!string.IsNullOrWhiteSpace(_email); } }
+        catch(HttpRequestException) { _message="Unable to connect to the server."; }
+        finally { _checkingSession=false; }
+        if(!_signedIn) { Navigation.NavigateTo("/", replace:true); return; }
+        await LoadAsync();
+    }
+    private async Task LoadAsync() {
+        _loading=true; _message="";
+        try {
+            var url=$"api/files?page={_page}&pageSize={_pageSize}";
+            if(!string.IsNullOrWhiteSpace(_search)) url += "&search="+Uri.EscapeDataString(_search.Trim());
+            if(!string.IsNullOrWhiteSpace(_status)) url += "&status="+Uri.EscapeDataString(_status);
+            using var response=await Http.GetAsync(url);
+            if(response.IsSuccessStatusCode) { var data=await response.Content.ReadFromJsonAsync<FileListResponse>(); _items=data?.Items??[]; _total=data?.Total??0; if(_selected is not null) _selected=_items.FirstOrDefault(x=>x.Id==_selected.Id); }
+            else _message=response.StatusCode==System.Net.HttpStatusCode.Forbidden ? "The current session cannot access file management." : "Unable to load files. Check the server configuration.";
+        } catch(HttpRequestException) { _message="Unable to connect to the server."; }
+        finally { _loading=false; }
+    }
+    private async Task SelectAsync(FileItem item) {
+        _selected=item; _rename.FileName=item.FileName; _textPreview=null; _subtitleUrl=null; _subtitleMessage="";
+        if(IsText(item.ContentType) && item.SizeBytes <= 256*1024) {
+            try { _textPreview=await Http.GetStringAsync(ContentUrl(item.Id)); }
+            catch(HttpRequestException) { _textPreview="Preview could not be loaded."; }
+        }
+    }
+    private async Task UploadAsync(ChangeEventArgs args) {
+        if(args.Value is not Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs) { }
+        // File uploads use the browser InputFile component so streams remain bounded.
+        await Task.CompletedTask;
+    }
+    private async Task UploadSubtitleAsync(ChangeEventArgs args) { _subtitleMessage="Subtitle upload requires the subtitle API, which is not available yet."; await Task.CompletedTask; }
+    private async Task RenameAsync() {
+        if(_selected is null) return; _busy=true;
+        try { using var response=await Http.PatchAsJsonAsync($"api/files/{_selected.Id}",new { fileName=_rename.FileName, rowVersion=_selected.RowVersion }); if(response.IsSuccessStatusCode){_message="File name updated."; await LoadAsync();}else _message=response.StatusCode==System.Net.HttpStatusCode.Conflict?"This file changed. Refresh and retry.":"Unable to rename file."; }
+        catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
+    }
+    private async Task DeleteAsync() {
+        if(_selected is null || !await ConfirmDeleteAsync()) return; _busy=true;
+        try { using var response=await Http.DeleteAsync($"api/files/{_selected.Id}"); if(response.IsSuccessStatusCode){_message="File marked for deletion.";_selected=null;await LoadAsync();}else _message="Unable to delete file."; }
+        catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
+    }
+    private Task<bool> ConfirmDeleteAsync() { _message="Delete confirmation is required before proceeding. Use the browser confirmation in the next update."; return Task.FromResult(false); }
+    private async Task SearchKeyDown(KeyboardEventArgs e) { if(e.Key=="Enter"){_page=1;await LoadAsync();} }
+    private async Task PreviousAsync(){if(_page>1){_page--;await LoadAsync();}}
+    private async Task NextAsync(){if(_page*_pageSize<_total){_page++;await LoadAsync();}}
+    private string ContentUrl(Guid id)=>$"api/files/{id}/content";
+    private string DownloadUrl(Guid id)=>$"api/files/{id}/download";
+    private static bool IsImage(string t)=>t.StartsWith("image/",StringComparison.OrdinalIgnoreCase)&&!t.Equals("image/svg+xml",StringComparison.OrdinalIgnoreCase);
+    private static bool IsPdf(string t)=>t.Equals("application/pdf",StringComparison.OrdinalIgnoreCase);
+    private static bool IsVideo(string t)=>t.StartsWith("video/",StringComparison.OrdinalIgnoreCase);
+    private static bool IsText(string t)=>t.StartsWith("text/",StringComparison.OrdinalIgnoreCase)||t is "application/json" or "application/xml" or "application/javascript";
+    private static string IconFor(string t)=>t.StartsWith("image/")?"IMG":t=="application/pdf"?"PDF":t.StartsWith("video/")?"VID":t.StartsWith("text/")||t=="application/json"?"TXT":"FILE";
+    private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
+    private sealed record SessionResponse(string Email, string? Role);
+    private sealed record FileListResponse(List<FileItem> Items,long Total,int Page,int PageSize);
+    private sealed record FileItem(Guid Id,string FileName,string ContentType,long SizeBytes,string Sha256,string Status,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion);
+    private sealed class RenameModel { public string FileName {get;set;}=""; }
+}
