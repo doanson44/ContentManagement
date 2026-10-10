@@ -62,8 +62,10 @@ builder.Services.AddOptions<SmtpOptions>()
     .ValidateOnStart();
 
 var connectionString = builder.Configuration.GetConnectionString("ContentManagement");
-if (!string.IsNullOrWhiteSpace(connectionString))
-    builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("ConnectionStrings:ContentManagement must be configured.");
+
+builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
 
 var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
