@@ -190,6 +190,23 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+try
+{
+    await using var migrationScope = app.Services.CreateAsyncScope();
+    var dbContext = migrationScope.ServiceProvider.GetRequiredService<ContentManagementDbContext>();
+
+    app.Logger.LogInformation("Applying pending ContentManagement database migrations.");
+    await dbContext.Database.MigrateAsync();
+    app.Logger.LogInformation("ContentManagement database migrations completed.");
+}
+catch (Exception exception)
+{
+    app.Logger.LogCritical(exception,
+        "Database migration failed during startup. The application will not start.");
+    throw;
+}
+
 app.UseSerilogRequestLogging();
 if (!app.Environment.IsDevelopment())
 {
