@@ -25,10 +25,34 @@ jobs:
         run: dotnet test tests/ContentManagement.UnitTests/ContentManagement.UnitTests.csproj --no-build --configuration Release
       - name: Start SQL Server for integration tests
         run: docker compose -f Docker/docker-compose.integration.yml up -d --wait --wait-timeout 240
+      - name: Diagnose SQL Server host connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f Docker/docker-compose.integration.yml ps
+          echo "Published SQL Server port:"
+          docker compose -f Docker/docker-compose.integration.yml port sqlserver 1433
+          container_id="$(docker compose -f Docker/docker-compose.integration.yml ps -q sqlserver)"
+          docker inspect --format='Container={{.Name}} State={{.State.Status}} Ports={{json .NetworkSettings.Ports}}' "$container_id"
+          echo "Checking host TCP connection to 127.0.0.1:14333..."
+          for attempt in $(seq 1 10); do
+            if timeout 2 bash -c ':</dev/tcp/127.0.0.1/14333' 2>/dev/null; then
+              echo "Host TCP connection succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Host TCP connection attempt $attempt failed."
+            sleep 2
+          done
+          echo "SQL Server container logs:"
+          docker compose -f Docker/docker-compose.integration.yml logs --no-color sqlserver
+          exit 1
       - name: Integration tests
         env:
           ConnectionStrings__IntegrationTests: "Server=127.0.0.1,14333;Database=master;User Id=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True;Connect Timeout=5"
         run: dotnet test tests/ContentManagement.IntegrationTests/ContentManagement.IntegrationTests.csproj --no-build --configuration Release
+      - name: SQL Server logs on failure
+        if: failure()
+        run: docker compose -f Docker/docker-compose.integration.yml logs --no-color sqlserver
       - name: Publish Windows x86 deployment
         run: dotnet publish src/ContentManagement.Server/ContentManagement.Server.csproj --configuration Release --runtime win-x86 --self-contained true --output artifacts/publish
       - name: Validate and package deployment
