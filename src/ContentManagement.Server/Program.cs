@@ -9,6 +9,7 @@ using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -66,6 +67,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:ContentManagement must be configured.");
 
 builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ContentManagementDbContext>("sqlserver", tags: ["ready"]);
 
 var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
@@ -232,6 +235,15 @@ if (hangfireEnabled)
         Authorization = [new AdminDashboardAuthorizationFilter()]
     });
 }
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+}).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+}).AllowAnonymous();
 
 app.MapControllers();
 app.MapGet("/api/{**path}", () => Results.NotFound());
