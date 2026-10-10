@@ -54,11 +54,7 @@ $env:Authentication__ApiKey = "<server-to-server-api-key>"
 
 The OTP challenge is persisted in SQL Server. OTPs expire, are single-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. OTP issuance always targets the single email in `AdminAuth:AllowedEmails`, and OTP verification binds the code to that same server-configured address; the browser cannot choose an account. Unsafe requests without the API-key header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
 
-Apply the new migration during a planned deployment after backing up the database:
-
-```bash
-dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
-```
+The server applies pending ContentManagement database migrations automatically during startup before accepting requests. Back up the database before deploying a version that introduces schema changes, and review migration files before deployment. The application identity must have permission to apply schema changes; if migrations fail, startup fails and the exception is logged server-side.
 
 The migrations include `202610090002_AddAdminOtpChallenges` and `202610090004_AddManagedUsers` (the latter is retained for database migration history; managed-user endpoints and sign-in have been removed). Configure the allowlist only for trusted administrators. The browser authentication surface provides administrator OTP sign-in and sign-out. A formal audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
 
@@ -102,7 +98,7 @@ The server hosts the client at `/` and exposes the following anonymous health en
 - `GET /health/ready`: readiness probe. Checks connectivity through `ContentManagementDbContext`; returns HTTP 503 if SQL Server cannot be reached.
 - `GET /health/live`: liveness probe. Checks only that the application process can serve requests and does not depend on SQL Server.
 
-Health responses do not include connection strings, exception details, or other database diagnostics. The health checks do not create the database or apply migrations; provision the database and apply reviewed migrations separately. HTTPS redirection may require trusting the local development certificate.
+Health responses do not include connection strings, exception details, or other database diagnostics. Startup applies pending EF Core migrations before the server begins accepting requests; SQL Server must be reachable and the configured identity must have the required database and schema permissions. HTTPS redirection may require trusting the local development certificate.
 
 ## Database connection configuration
 
@@ -112,11 +108,7 @@ The server reads `ConnectionStrings:ContentManagement` and always registers the 
 Server=localhost;Database=ContentManagement;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Connect Timeout=5
 ```
 
-Ensure SQL Server is installed/running and the Windows identity running the application has permission to access the database. The application does not create the database or apply migrations automatically. After creating the database and backing it up as appropriate, apply reviewed migrations:
-
-```bash
-dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
-```
+Ensure SQL Server is installed/running and the Windows identity running the application has permission to access the database. On startup, the server calls EF Core `Database.MigrateAsync()` to apply any pending migrations before serving requests. Review migrations and back up existing data before deploying schema changes. The SQL Server identity must have permission to create the database if it does not exist and to modify its schema; if the configured identity lacks these permissions or SQL Server is unavailable, startup fails.
 
 Override the connection string per environment rather than committing credentials. For example, in PowerShell:
 
@@ -128,7 +120,7 @@ Use a managed secret provider or protected environment variables for credentials
 
 ## Storage configuration
 
-The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Migrations are not applied automatically; apply reviewed migrations during deployment after a backup.
+The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Pending EF Core migrations are applied automatically at server startup.
 
 ## Data and storage notes
 
@@ -142,7 +134,7 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 
 CI publishes the server as a self-contained `win-x86` application, includes hosted WebAssembly assets, validates required output files, and uploads `ContentManagement-win-x86.zip` as a workflow artifact.
 
-Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. This baseline does not automatically apply database migrations.
+Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. Because startup applies pending migrations automatically, back up the database and review migration changes before deploying a new version. This startup migration approach suits the intended single-server deployment; use a controlled migration bundle or reviewed SQL script if the deployment model changes to multiple application instances or requires separate schema-change approval.
 
 ## Operational services: SMTP, Serilog, and Hangfire
 
@@ -168,15 +160,11 @@ Use a dedicated database/login with least-privilege access and a valid trusted S
 
 ### Dashboard setup
 
-After applying migration `202610090003_AddSystemSettings`, open `/dashboard/setup` as an administrator to configure stale-file cleanup policy. SMTP configuration is separate and is loaded from the server's `Smtp` section in `appsettings.json` or environment variables; the dashboard does not configure or test email delivery.
+After the server starts and automatically applies pending migrations, open `/dashboard/setup` as an administrator to configure stale-file cleanup policy. SMTP configuration is separate and is loaded from the server's `Smtp` section in `appsettings.json` or environment variables; the dashboard does not configure or test email delivery.
 
 Default cleanup policy: files older than 90 days are eligible, the worker checks every 24 hours, and marked files wait 7 days before deletion. Hangfire polls hourly and runs when the configured interval has elapsed. The worker marks eligible files first and deletes the binary plus metadata only after the grace period. Each run is bounded to 500 marked files and 100 deletions. Cleanup runs only when Hangfire is enabled and configured.
 
-Apply migrations after backing up the database:
-
-```bash
-dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
-```
+Pending migrations are applied automatically during server startup. Before deploying new migrations, back up the database and review the migration files.
 
 ## Administrator dashboard
 
