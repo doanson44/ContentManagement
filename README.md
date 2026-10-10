@@ -96,7 +96,13 @@ Set `Authentication__ApiKey` and then run:
 dotnet run --project src/ContentManagement.Server/ContentManagement.Server.csproj
 ```
 
-The server hosts the client at `/` and the health endpoint at `/api/health`. HTTPS redirection may require trusting the local development certificate.
+The server hosts the client at `/` and exposes the following anonymous health endpoints:
+
+- `GET /api/health`: backward-compatible JSON response; returns HTTP 200 when SQL Server is reachable, or HTTP 503 when readiness fails.
+- `GET /health/ready`: readiness probe. Checks connectivity through `ContentManagementDbContext`; returns HTTP 503 if SQL Server cannot be reached.
+- `GET /health/live`: liveness probe. Checks only that the application process can serve requests and does not depend on SQL Server.
+
+Health responses do not include connection strings, exception details, or other database diagnostics. The health checks do not create the database or apply migrations; provision the database and apply reviewed migrations separately. HTTPS redirection may require trusting the local development certificate.
 
 ## Database connection configuration
 
