@@ -151,13 +151,9 @@ The server uses Serilog for structured application and HTTP request logging. The
 
 ### Hangfire background jobs
 
-Hangfire is optional and disabled by default. To enable it, set the feature flag:
+Hangfire is enabled by default through `Hangfire:Enabled` in `appsettings.json`. Set `Hangfire__Enabled=false` only when intentionally disabling background processing.
 
-```powershell
-$env:Hangfire__Enabled = "true"
-```
-
-Hangfire uses the same `ConnectionStrings:ContentManagement` SQL Server connection string as the application and stores its job/queue metadata in that database using Hangfire-managed tables. Ensure the configured SQL identity has the required permissions to create/update Hangfire tables as well as apply the application's EF Core migrations. This keeps deployment configuration simple, but the application and Hangfire share the same database availability and resource capacity. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. The stale-file cleanup job is registered when Hangfire is enabled. If Hangfire is disabled, cleanup does not run and no additional connection string is required.
+Hangfire uses the same `ConnectionStrings:ContentManagement` SQL Server connection string as the application and stores its job/queue metadata in that database using Hangfire-managed tables. Ensure the configured SQL identity has the required permissions to create/update Hangfire tables as well as apply the application's EF Core migrations. This keeps deployment configuration simple, but the application and Hangfire share the same database availability and resource capacity. The worker runs in the server process. The dashboard is exposed at `/hangfire` while Hangfire is enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. The stale-file cleanup job is registered by default. If Hangfire is explicitly disabled, cleanup does not run.
 
 ### Dashboard setup
 
