@@ -1,3 +1,4 @@
+using Xunit;
 using ContentManagement.Server.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
