@@ -17,7 +17,7 @@ public sealed class HealthControllerTests
 
         var result = await controller.Get(CancellationToken.None);
 
-        var response = Assert.IsType<ObjectResult>(result.Result);
+        var response = Assert.IsAssignableFrom<ObjectResult>(result.Result);
         Assert.Equal(expectedStatusCode, response.StatusCode);
         Assert.Equal(healthStatus.ToString(), Assert.IsType<HealthResponse>(response.Value).Status);
     }
