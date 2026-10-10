@@ -1,10 +1,12 @@
 using System.Net;
+using ContentManagement.Server.Controllers;
 using ContentManagement.Server.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -24,6 +26,20 @@ public sealed class ApiAuthorizationHttpIntegrationTests
         using var response = await client.GetAsync("/api/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var health = await response.Content.ReadFromJsonAsync<HealthResponse>();
+        Assert.Equal("Healthy", health?.Status);
+    }
+
+    [Fact]
+    public async Task Readiness_endpoint_reports_sql_server_healthy()
+    {
+        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/health/ready");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Healthy", (await response.Content.ReadAsStringAsync()).Trim());
     }
 
     [Fact]
@@ -106,13 +122,41 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     private sealed class AuthorizationTestApplicationFactory(string apiKey, string[] scopes)
         : WebApplicationFactory<Program>
     {
+        private static string EnsureDatabase()
+        {
+            var integrationConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__IntegrationTests");
+            if (string.IsNullOrWhiteSpace(integrationConnectionString))
+                throw new InvalidOperationException(
+                    "Set ConnectionStrings__IntegrationTests to the disposable Docker SQL Server connection string.");
+
+            const string databaseName = "ContentManagementHttpIntegration";
+            var masterConnectionString = new SqlConnectionStringBuilder(integrationConnectionString)
+            {
+                InitialCatalog = "master"
+            };
+
+            using (var connection = new SqlConnection(masterConnectionString.ConnectionString))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = $"IF DB_ID(N'{databaseName}') IS NULL CREATE DATABASE [{databaseName}];";
+                command.ExecuteNonQuery();
+            }
+
+            return new SqlConnectionStringBuilder(integrationConnectionString)
+            {
+                InitialCatalog = databaseName
+            }.ConnectionString;
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 var settings = new Dictionary<string, string?>
                 {
-                    ["Authentication:ApiKey"] = apiKey
+                    ["Authentication:ApiKey"] = apiKey,
+                    ["ConnectionStrings:ContentManagement"] = EnsureDatabase()
                 };
                 for (var index = 0; index < scopes.Length; index++)
                     settings[$"Authentication:Scopes:{index}"] = scopes[index];
