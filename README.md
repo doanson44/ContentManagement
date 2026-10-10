@@ -151,15 +151,13 @@ The server uses Serilog for structured application and HTTP request logging. The
 
 ### Hangfire background jobs
 
-Hangfire is optional and disabled by default. To enable it, configure a dedicated SQL Server connection string and turn on the feature flag:
+Hangfire is optional and disabled by default. To enable it, set the feature flag:
 
 ```powershell
 $env:Hangfire__Enabled = "true"
-$env:ConnectionStrings__Hangfire = "Server=sql.example;Database=ContentManagementJobs;User Id=...;Password=...;Encrypt=True;TrustServerCertificate=False"
 ```
 
-Use a dedicated database/login with least-privilege access and a valid trusted SQL Server certificate in production. Hangfire creates/updates its schema when enabled; plan database permissions and deployment accordingly. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. The stale-file cleanup job is registered when Hangfire is enabled. If Hangfire is disabled, cleanup does not run and the application does not require `ConnectionStrings:Hangfire`.
-
+Hangfire uses the same `ConnectionStrings:ContentManagement` SQL Server connection string as the application and stores its job/queue metadata in that database using Hangfire-managed tables. Ensure the configured SQL identity has the required permissions to create/update Hangfire tables as well as apply the application's EF Core migrations. This keeps deployment configuration simple, but the application and Hangfire share the same database availability and resource capacity. The worker runs in the server process. The dashboard is exposed at `/hangfire` only when enabled and is restricted to a signed-in administrator session. Keep it behind HTTPS and do not expose it to the public internet without additional network controls. The stale-file cleanup job is registered when Hangfire is enabled. If Hangfire is disabled, cleanup does not run and no additional connection string is required.
 
 ### Dashboard setup
 
@@ -172,4 +170,3 @@ Pending migrations are applied automatically during server startup. Before deplo
 ## Administrator dashboard
 
 After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module is available on the `feature/file-management-crud` branch and provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. API clients and JSON management remain placeholders. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
-
