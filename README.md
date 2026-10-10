@@ -98,9 +98,31 @@ dotnet run --project src/ContentManagement.Server/ContentManagement.Server.cspro
 
 The server hosts the client at `/` and the health endpoint at `/api/health`. HTTPS redirection may require trusting the local development certificate.
 
+## Database connection configuration
+
+The server reads `ConnectionStrings:ContentManagement` and always registers the EF Core SQL Server context. The committed `appsettings.json` value is a local-development example for a SQL Server default instance using Windows Integrated Authentication:
+
+```text
+Server=localhost;Database=ContentManagement;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Connect Timeout=5
+```
+
+Ensure SQL Server is installed/running and the Windows identity running the application has permission to access the database. The application does not create the database or apply migrations automatically. After creating the database and backing it up as appropriate, apply reviewed migrations:
+
+```bash
+dotnet ef database update --project src/ContentManagement.Server/ContentManagement.Server.csproj
+```
+
+Override the connection string per environment rather than committing credentials. For example, in PowerShell:
+
+```powershell
+$env:ConnectionStrings__ContentManagement = "Server=sql.example;Database=ContentManagement;User ID=contentmanagement_app;Password=<secret>;Encrypt=True;TrustServerCertificate=False"
+```
+
+Use a managed secret provider or protected environment variables for credentials, a least-privilege SQL login, and a trusted SQL Server TLS certificate in production. The local-development example sets `TrustServerCertificate=True`; do not carry that setting into production without a deliberate security review.
+
 ## Storage configuration
 
-The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Configure SQL with `ConnectionStrings__ContentManagement`. Migrations are not applied automatically; apply reviewed migrations during deployment after a backup.
+The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Migrations are not applied automatically; apply reviewed migrations during deployment after a backup.
 
 ## Data and storage notes
 
