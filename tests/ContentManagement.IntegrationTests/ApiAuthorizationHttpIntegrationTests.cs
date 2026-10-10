@@ -165,7 +165,8 @@ public sealed class ApiAuthorizationHttpIntegrationTests
                 var settings = new Dictionary<string, string?>
                 {
                     ["Authentication:ApiKey"] = apiKey,
-                    ["ConnectionStrings:ContentManagement"] = databaseConnectionString
+                    ["ConnectionStrings:ContentManagement"] = databaseConnectionString,
+                    ["Hangfire:Enabled"] = "false"
                 };
                 for (var index = 0; index < scopes.Length; index++)
                     settings[$"Authentication:Scopes:{index}"] = scopes[index];
