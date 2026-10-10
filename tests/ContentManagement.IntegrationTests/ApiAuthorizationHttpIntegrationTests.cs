@@ -123,6 +123,8 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     private sealed class AuthorizationTestApplicationFactory(string apiKey, string[] scopes)
         : WebApplicationFactory<Program>
     {
+        private static readonly object DatabaseLock = new();
+
         private static string EnsureDatabase()
         {
             var integrationConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__IntegrationTests");
@@ -136,8 +138,9 @@ public sealed class ApiAuthorizationHttpIntegrationTests
                 InitialCatalog = "master"
             };
 
-            using (var connection = new SqlConnection(masterConnectionString.ConnectionString))
+            lock (DatabaseLock)
             {
+                using var connection = new SqlConnection(masterConnectionString.ConnectionString);
                 connection.Open();
                 using var command = connection.CreateCommand();
                 command.CommandText = $"IF DB_ID(N'{databaseName}') IS NULL CREATE DATABASE [{databaseName}];";
