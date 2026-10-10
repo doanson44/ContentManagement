@@ -157,12 +157,15 @@ public sealed class ApiAuthorizationHttpIntegrationTests
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            var databaseConnectionString = EnsureDatabase();
+            builder.UseSetting("ConnectionStrings:ContentManagement", databaseConnectionString);
+
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 var settings = new Dictionary<string, string?>
                 {
                     ["Authentication:ApiKey"] = apiKey,
-                    ["ConnectionStrings:ContentManagement"] = EnsureDatabase()
+                    ["ConnectionStrings:ContentManagement"] = databaseConnectionString
                 };
                 for (var index = 0; index < scopes.Length; index++)
                     settings[$"Authentication:Scopes:{index}"] = scopes[index];
