@@ -74,15 +74,11 @@ var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
 {
     builder.Services.AddScoped<StaleFileCleanupJob>();
-    var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfire");
-    if (string.IsNullOrWhiteSpace(hangfireConnectionString))
-        throw new InvalidOperationException("ConnectionStrings:Hangfire must be configured when Hangfire:Enabled is true.");
-
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
-        .UseSqlServerStorage(hangfireConnectionString, new SqlServerStorageOptions
+        .UseSqlServerStorage(connectionString, new SqlServerStorageOptions
         {
             PrepareSchemaIfNecessary = true,
             QueuePollInterval = TimeSpan.FromSeconds(15),
