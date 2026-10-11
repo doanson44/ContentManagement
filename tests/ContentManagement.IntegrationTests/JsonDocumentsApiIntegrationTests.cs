@@ -29,7 +29,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         client.DefaultRequestHeaders.Add("Origin", "http://localhost");
 
         using var list = await client.GetAsync("/api/json");
-        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest("test", "{\"ok\":true}"));
+        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, "test", "{\"ok\":true}"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, list.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, create.StatusCode);
@@ -42,7 +42,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var client = CreateClient(factory);
 
         using var list = await client.GetAsync("/api/json");
-        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest("test", "{\"ok\":true}"));
+        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, "test", "{\"ok\":true}"));
         using var delete = await client.DeleteAsync($"/api/json/{Guid.NewGuid()}");
 
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
@@ -59,7 +59,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         const string originalJson = "{\"enabled\":true,\"count\":1}";
         const string updatedJson = "{\"enabled\":false,\"count\":2}";
 
-        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(type, originalJson));
+        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest("manual-code-" + Guid.NewGuid().ToString("N"), type, originalJson));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.NotNull(created);
@@ -85,7 +85,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         Assert.NotNull(listing);
         Assert.Contains(listing.Items, item => item.Id == created.Id);
 
-        using var update = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(type + "-updated", updatedJson));
+        using var update = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(created.Code, type + "-updated", updatedJson));
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         var updated = await update.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.Equal(type + "-updated", updated?.DocumentType);
@@ -108,7 +108,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var factory = CreateFactory([ScopePolicies.JsonWrite]);
         using var client = CreateClient(factory);
 
-        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest($"invalid-{Guid.NewGuid():N}", "{not-json"));
+        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, $"invalid-{Guid.NewGuid():N}", "{not-json"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -119,7 +119,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var factory = CreateFactory([ScopePolicies.JsonWrite], maxJsonDocumentBytes: 32);
         using var client = CreateClient(factory);
 
-        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest($"large-{Guid.NewGuid():N}", "{\"value\":\"" + new string('x', 128) + "\"}"));
+        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, $"large-{Guid.NewGuid():N}", "{\"value\":\"" + new string('x', 128) + "\"}"));
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
@@ -130,7 +130,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
         using var client = CreateClient(factory);
         var type = $"paging-{Guid.NewGuid():N}";
-        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(type, "{\"ok\":true}"));
+        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, type, "{\"ok\":true}"));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
 
         using var response = await client.GetAsync($"/api/json?search={Uri.EscapeDataString(type)}&page=0&pageSize=1000&status=Active");
