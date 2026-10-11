@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ContentManagement.IntegrationTests.Infrastructure;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Controllers;
@@ -14,12 +16,17 @@ namespace ContentManagement.IntegrationTests;
 public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 {
     private const string ApiKey = "json-integration-test-key-with-sufficient-entropy";
+    private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     [Fact]
     public async Task Json_endpoints_require_authentication()
     {
         using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "http://localhost");
 
         using var list = await client.GetAsync("/api/json");
         using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest("test", "{\"ok\":true}"));
@@ -54,7 +61,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 
         using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(type, originalJson));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
-        var created = await create.Content.ReadFromJsonAsync<JsonDocumentDetails>();
+        var created = await create.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.NotNull(created);
         Assert.NotEqual(Guid.Empty, created.Id);
         Assert.Equal(type, created.DocumentType);
@@ -74,8 +81,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listBody = await list.Content.ReadAsStringAsync();
         Assert.DoesNotContain(originalJson, listBody, StringComparison.Ordinal);
-        var listing = System.Text.Json.JsonSerializer.Deserialize<JsonDocumentListResponse>(
-            listBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var listing = JsonSerializer.Deserialize<JsonDocumentListResponse>(listBody, WebJsonOptions);
         Assert.NotNull(listing);
         Assert.Contains(listing.Items, item => item.Id == created.Id);
 
@@ -129,7 +135,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 
         using var response = await client.GetAsync($"/api/json?search={Uri.EscapeDataString(type)}&page=0&pageSize=1000&status=Active");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<JsonDocumentListResponse>();
+        var result = await response.Content.ReadFromJsonAsync<JsonDocumentListResponse>(WebJsonOptions);
         Assert.NotNull(result);
         Assert.Equal(1, result.Page);
         Assert.Equal(100, result.PageSize);
