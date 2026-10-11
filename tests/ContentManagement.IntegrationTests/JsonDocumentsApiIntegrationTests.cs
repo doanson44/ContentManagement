@@ -74,7 +74,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 
         using var get = await client.GetAsync($"/api/json/{created.Id}");
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
-        var read = await get.Content.ReadFromJsonAsync<JsonDocumentDetails>();
+        var read = await get.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.Equal(originalJson, read?.Json);
 
         using var list = await client.GetAsync($"/api/json?search={Uri.EscapeDataString(type)}&page=1&pageSize=10");
@@ -87,7 +87,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 
         using var update = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(type + "-updated", updatedJson));
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
-        var updated = await update.Content.ReadFromJsonAsync<JsonDocumentDetails>();
+        var updated = await update.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.Equal(type + "-updated", updated?.DocumentType);
         Assert.Equal(updatedJson, updated?.Json);
         Assert.Equal(updatedJson.Length, updated?.UncompressedSizeBytes);
