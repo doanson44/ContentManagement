@@ -15,6 +15,12 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
+## JSON document codes
+
+Each JSON document has a unique `Code` in addition to its internal GUID. The admin editor lets you enter a code when creating or editing a document. Leave the code blank on create to have the server generate a value in the form `json-<guid>`. Codes are trimmed, limited to 100 characters, and may contain letters, numbers, dots, underscores, and hyphens; the first character must be a letter or number. Duplicate codes return HTTP 409. Existing records receive stable generated codes through the `AddJsonDocumentCode` migration. The JSON list search matches code, document type, SHA-256, and GUID.
+
+For API creation, send an optional `code` field with `documentType` and `json`. Omitting or sending a blank code generates one. For updates, omitting/blanking `code` preserves the existing code.
+
 ## Authentication configuration
 
 Configure a high-entropy secret outside source control, for example through an environment variable or secret manager:
