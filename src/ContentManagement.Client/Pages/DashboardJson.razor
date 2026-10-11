@@ -34,7 +34,7 @@ else
             <div class="files-workspace">
                 <section class="files-list-panel">
                     <div class="files-toolbar">
-                        <input aria-label="Search JSON documents" placeholder="Search by code, type or SHA-256…" @bind="_search" @bind:event="oninput" />
+                        <input aria-label="Search JSON documents" placeholder="Search JSON documents by code…" @bind="_search" @bind:event="oninput" />
                         <button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Search</button>
                     </div>
                     @if (_loading) { <p class="files-empty">Loading JSON documents…</p> }
