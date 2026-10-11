@@ -27,7 +27,7 @@ else if (_signedIn)
             }
             @if (CanAccessJson)
             {
-                <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
+                <a class="sidebar-link" href="/dashboard/json"><span>{ }</span> JSON documents</a>
             }
             @if (_isAdministrator)
             {
@@ -100,9 +100,9 @@ else if (_signedIn)
                 {
                     <article class="module-card">
                         <div class="module-icon json-icon">{ }</div>
-                        <div class="module-card-heading"><h3>JSON documents</h3><span class="module-status">Planned</span></div>
+                        <div class="module-card-heading"><h3>JSON documents</h3><span class="module-status">Available</span></div>
                         <p>Manage JSON documents and their metadata, validation, and lifecycle.</p>
-                        <div class="module-footer"><span>Structured content</span><span class="module-arrow">↗</span></div>
+                        <div class="module-footer"><span>Structured content</span><a href="/dashboard/json">Open ↗</a></div>
                     </article>
                 }
             </section>
