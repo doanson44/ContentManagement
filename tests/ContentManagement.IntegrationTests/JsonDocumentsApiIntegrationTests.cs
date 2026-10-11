@@ -108,7 +108,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     {
         using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
         using var client = CreateClient(factory);
-        const string code = "integration-custom-code";
+        var code = $"integration-{Guid.NewGuid():N}";
 
         using var first = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-test", "{\"value\":1}"));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
