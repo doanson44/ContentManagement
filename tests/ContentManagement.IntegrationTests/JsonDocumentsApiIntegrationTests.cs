@@ -104,6 +104,30 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     }
 
     [Fact]
+    public async Task Create_generates_code_when_blank_and_rejects_duplicate_custom_code()
+    {
+        using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
+        using var client = CreateClient(factory);
+        const string code = "integration-custom-code";
+
+        using var first = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-test", "{\"value\":1}"));
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var created = await first.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(created);
+        Assert.Equal(code, created.Code);
+
+        using var duplicate = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-test-duplicate", "{\"value\":2}"));
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+
+        using var generated = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, "auto-code-test", "{\"value\":3}"));
+        Assert.Equal(HttpStatusCode.Created, generated.StatusCode);
+        var autoCode = await generated.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(autoCode);
+        Assert.StartsWith("json-", autoCode.Code);
+        Assert.NotEqual(code, autoCode.Code);
+    }
+
+    [Fact]
     public async Task Create_rejects_malformed_json()
     {
         using var factory = CreateFactory([ScopePolicies.JsonWrite]);
