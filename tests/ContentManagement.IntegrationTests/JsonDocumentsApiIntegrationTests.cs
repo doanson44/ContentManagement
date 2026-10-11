@@ -51,7 +51,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     }
 
     [Fact]
-    public async Task Json_document_can_be_created_read_listed_updated_and_soft_deleted()
+    public async Task Json_document_can_be_created_read_listed_updated_and_permanently_deleted()
     {
         using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite, ScopePolicies.JsonDelete]);
         using var client = CreateClient(factory);
