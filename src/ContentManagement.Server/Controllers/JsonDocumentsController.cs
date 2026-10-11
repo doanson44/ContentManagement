@@ -27,7 +27,7 @@ public sealed class JsonDocumentsController(
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
-        var query = db.JsonDocuments.AsNoTracking().Where(x => x.Status != ContentStatus.Deleted);
+        var query = db.JsonDocuments.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -145,10 +145,10 @@ public sealed class JsonDocumentsController(
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var entity = await db.JsonDocuments.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (entity is null || entity.Status is ContentStatus.MarkedForDeletion or ContentStatus.Deleting or ContentStatus.Deleted)
+        if (entity is null)
             return NotFound();
-        entity.Status = ContentStatus.MarkedForDeletion;
-        entity.UpdatedUtc = DateTime.UtcNow;
+
+        db.JsonDocuments.Remove(entity);
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
