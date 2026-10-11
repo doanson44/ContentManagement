@@ -127,7 +127,7 @@ Use a managed secret provider or protected environment variables for credentials
 
 ## Storage configuration
 
-The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`), `MaxUploadBytes` (default 100 MiB), and `MaxJsonDocumentBytes` (default 10 MiB). Override through standard providers such as `ContentManagement__StorageRoot`, `ContentManagement__MaxUploadBytes`, and `ContentManagement__MaxJsonDocumentBytes`. Pending EF Core migrations are applied automatically at server startup.
+The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`) and `MaxUploadBytes` (default 100 MiB). JSON documents have no application-configured payload-size limit; Kestrel request-body limiting is disabled. The practical maximum is still bounded by available memory, .NET string/array limits, SQL Server `varbinary(max)` (approximately 2 GB per value), and any IIS/reverse-proxy request limits in front of the app. Size limits should be set at the hosting boundary only when intentionally required to protect capacity. Pending EF Core migrations are applied automatically at server startup.
 
 ## Data and storage notes
 
