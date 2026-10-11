@@ -65,7 +65,7 @@ else
                         <div class="json-editor-actions">
                             <button class="files-secondary" @onclick="ValidateJson" disabled="@_busy">Validate JSON</button>
                             <button class="files-secondary" @onclick="SaveAsync" disabled="@_busy">Save document</button>
-                            @if (_selected is not null) { <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Mark for deletion</button> }
+                            @if (_selected is not null) { <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete permanently</button> }
                         </div>
                         @if (!string.IsNullOrWhiteSpace(_validation)) { <p role="status" class="files-message">@_validation</p> }
                         @if (_selected is not null) { <p class="files-empty">SHA-256: @_selected.Sha256<br />Compressed: @FormatSize(_selected.CompressedSizeBytes)</p> }
@@ -211,7 +211,7 @@ else
         {
             using var response = await Http.DeleteAsync($"api/json/{_selected.Id}");
             if (!response.IsSuccessStatusCode) { _message = $"Delete failed (HTTP {(int)response.StatusCode})."; return; }
-            _message = "Document marked for deletion.";
+            _message = "Document permanently deleted.";
             NewDocument();
             await LoadAsync();
         }
