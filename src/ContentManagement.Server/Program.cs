@@ -163,7 +163,9 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(scope, policy => policy
             .RequireAuthenticatedUser()
-            .RequireClaim("scope", scope));
+            .RequireAssertion(context =>
+                context.User.IsInRole("Administrator") ||
+                context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == scope)));
     }
 });
 
