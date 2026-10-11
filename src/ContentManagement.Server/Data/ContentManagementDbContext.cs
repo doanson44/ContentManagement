@@ -52,6 +52,8 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.ToTable("JsonDocuments");
             entity.HasKey(document => document.Id);
             entity.Property(document => document.Id).ValueGeneratedNever();
+            entity.Property(document => document.Code).HasMaxLength(100).IsRequired();
+            entity.HasIndex(document => document.Code).IsUnique();
             entity.Property(document => document.CompressedPayload).HasColumnType("varbinary(max)").IsRequired();
             entity.Property(document => document.UncompressedSizeBytes).HasColumnType("bigint");
             entity.Property(document => document.CompressedSizeBytes).HasColumnType("bigint");
