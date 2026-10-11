@@ -17,6 +17,9 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// JSON documents are not capped by an application-configured request-body limit.
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = null);
+
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
