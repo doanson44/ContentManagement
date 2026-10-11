@@ -246,10 +246,17 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-if (hangfireEnabled)
+// Re-read from the fully-built configuration so that WebApplicationFactory
+// in-memory overrides (e.g. Hangfire:Enabled=false in integration tests)
+// are honoured even though the DI registrations above used the captured flag.
+if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
 {
-    RecurringJob.AddOrUpdate<StaleFileCleanupJob>(
-        "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly);
+    // Use DI-based IRecurringJobManager instead of static RecurringJob API.
+    // The static API requires JobStorage.Current which is only set after the
+    // Hangfire middleware initialises — resolving from DI works immediately.
+    var recurringJobManager = app.Services.GetRequiredService<IRecurringJobManager>();
+    recurringJobManager.AddOrUpdate<StaleFileCleanupJob>(
+        "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily());
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]
@@ -267,7 +274,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapControllers();
 app.MapGet("/api/{**path}", () => Results.NotFound());
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html").AllowAnonymous();
 app.Run();
 
 public partial class Program { }

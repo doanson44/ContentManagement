@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using ContentManagement.IntegrationTests.Infrastructure;
 using ContentManagement.Server.Controllers;
 using ContentManagement.Server.Auth;
 using Microsoft.AspNetCore.Authorization;
@@ -7,7 +8,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -16,14 +16,15 @@ using Xunit;
 
 namespace ContentManagement.IntegrationTests;
 
-public sealed class ApiAuthorizationHttpIntegrationTests
+[Collection(Collections.Integration)]
+public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
 {
     private const string ApiKey = "integration-test-key-with-sufficient-entropy";
 
     [Fact]
     public async Task Health_endpoint_is_public()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/api/health");
@@ -36,7 +37,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     [Fact]
     public async Task Readiness_endpoint_reports_sql_server_healthy()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/health/ready");
@@ -48,36 +49,42 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     [Fact]
     public async Task Unsafe_request_without_origin_is_rejected()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
+
         using var response = await client.PostAsync("/api/auth/logout", null);
+
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task Unsafe_request_from_same_origin_passes_origin_guard()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "http://localhost");
+
         using var response = await client.PostAsync("/api/auth/logout", null);
+
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task Unsafe_request_from_untrusted_origin_is_rejected()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, []);
+        using var factory = CreateFactory([]);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "https://attacker.example");
+
         using var response = await client.PostAsync("/api/auth/logout", null);
+
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task Protected_endpoint_returns_401_without_api_key()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, [ScopePolicies.FilesRead]);
+        using var factory = CreateFactory([ScopePolicies.FilesRead]);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/api/test-protected/files");
@@ -88,7 +95,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     [Fact]
     public async Task Protected_endpoint_returns_401_for_invalid_api_key()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, [ScopePolicies.FilesRead]);
+        using var factory = CreateFactory([ScopePolicies.FilesRead]);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "wrong-key");
 
@@ -100,7 +107,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     [Fact]
     public async Task Protected_endpoint_returns_403_when_key_has_no_required_scope()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, [ScopePolicies.JsonRead]);
+        using var factory = CreateFactory([ScopePolicies.JsonRead]);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, ApiKey);
 
@@ -112,7 +119,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests
     [Fact]
     public async Task Protected_endpoint_returns_200_when_key_has_required_scope()
     {
-        using var factory = new AuthorizationTestApplicationFactory(ApiKey, [ScopePolicies.FilesRead]);
+        using var factory = CreateFactory([ScopePolicies.FilesRead]);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, ApiKey);
 
@@ -122,50 +129,30 @@ public sealed class ApiAuthorizationHttpIntegrationTests
         Assert.Equal("authorized", await response.Content.ReadAsStringAsync());
     }
 
-    private sealed class AuthorizationTestApplicationFactory(string apiKey, string[] scopes)
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private WebApplicationFactory<Program> CreateFactory(string[] scopes) =>
+        new AuthorizationTestApplicationFactory(ApiKey, scopes, db.ConnectionString);
+
+    private sealed class AuthorizationTestApplicationFactory(
+        string apiKey,
+        string[] scopes,
+        string connectionString)
         : WebApplicationFactory<Program>
     {
-        private static readonly object DatabaseLock = new();
-
-        private static string EnsureDatabase()
-        {
-            var integrationConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__IntegrationTests");
-            if (string.IsNullOrWhiteSpace(integrationConnectionString))
-                throw new InvalidOperationException(
-                    "Set ConnectionStrings__IntegrationTests to the disposable Docker SQL Server connection string.");
-
-            const string databaseName = "ContentManagementHttpIntegration";
-            var masterConnectionString = new SqlConnectionStringBuilder(integrationConnectionString)
-            {
-                InitialCatalog = "master"
-            };
-
-            lock (DatabaseLock)
-            {
-                using var connection = new SqlConnection(masterConnectionString.ConnectionString);
-                connection.Open();
-                using var command = connection.CreateCommand();
-                command.CommandText = $"IF DB_ID(N'{databaseName}') IS NULL CREATE DATABASE [{databaseName}];";
-                command.ExecuteNonQuery();
-            }
-
-            return new SqlConnectionStringBuilder(integrationConnectionString)
-            {
-                InitialCatalog = databaseName
-            }.ConnectionString;
-        }
-
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            var databaseConnectionString = EnsureDatabase();
-            builder.UseSetting("ConnectionStrings:ContentManagement", databaseConnectionString);
+            // Point the app at the Testcontainers SQL Server instance.
+            builder.UseSetting("ConnectionStrings:ContentManagement", connectionString);
 
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 var settings = new Dictionary<string, string?>
                 {
                     ["Authentication:ApiKey"] = apiKey,
-                    ["ConnectionStrings:ContentManagement"] = databaseConnectionString,
+                    ["ConnectionStrings:ContentManagement"] = connectionString,
                     ["Hangfire:Enabled"] = "false"
                 };
                 for (var index = 0; index < scopes.Length; index++)

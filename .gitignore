@@ -7,7 +7,9 @@ TestResults/
 *.user
 *.suo
 appsettings.Local.json
+appsettings.Development.json
 .env
 .env.*
 !.env.example
 App_Data/
+logs/
