@@ -1,0 +1,227 @@
+@page "/dashboard/json"
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>JSON documents · ContentManagement</PageTitle>
+
+@if (_checkingSession)
+{
+    <div class="dashboard-loading">Checking administrator session…</div>
+}
+else if (!_signedIn)
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting…</div>
+}
+else
+{
+    <div class="dashboard-page files-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p><a class="sidebar-link" href="/dashboard">⌂ Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p>
+            <a class="sidebar-link" href="/dashboard/files">▤ Files</a>
+            <a class="sidebar-link active" href="/dashboard/json">{ } JSON documents</a>
+            <div class="sidebar-bottom"><div class="admin-avatar">A</div><div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div></div>
+        </aside>
+        <main class="dashboard-main files-main">
+            <header class="dashboard-header">
+                <div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>JSON documents</h1><p class="dashboard-subtitle">Create, validate, edit and manage compressed JSON documents.</p></div>
+                <button class="files-secondary" @onclick="NewDocument" disabled="@_busy">New document</button>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
+            <div class="files-workspace">
+                <section class="files-list-panel">
+                    <div class="files-toolbar">
+                        <input aria-label="Search JSON documents" placeholder="Search by type or SHA-256…" @bind="_search" @bind:event="oninput" />
+                        <button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Search</button>
+                    </div>
+                    @if (_loading) { <p class="files-empty">Loading JSON documents…</p> }
+                    else if (_items.Count == 0) { <p class="files-empty">No JSON documents found.</p> }
+                    else
+                    {
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Document type</th><th>Size</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id">
+                                <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.DocumentType</strong><small>@item.Id</small></span></button></td>
+                                <td>@FormatSize(item.UncompressedSizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                            </tr>
+                        }
+                        </tbody></table></div>
+                        <div class="files-pagination"><span>@_total documents · Page @_page</span><button class="files-secondary" @onclick="PreviousAsync" disabled="@(_page <= 1 || _loading)">Previous</button><button class="files-secondary" @onclick="NextAsync" disabled="@(_page * _pageSize >= _total || _loading)">Next</button></div>
+                    }
+                </section>
+                <section class="files-preview-panel">
+                    <div class="files-preview-heading"><div><p class="dashboard-eyebrow">DOCUMENT EDITOR</p><h2>@(_selected is null ? "New JSON document" : "Edit JSON document")</h2></div></div>
+                    <div class="json-editor">
+                        <label for="document-type">Document type</label>
+                        <input id="document-type" maxlength="200" @bind="_documentType" disabled="@_busy" placeholder="e.g. application-settings" />
+                        <label for="document-json">JSON payload</label>
+                        <textarea id="document-json" @bind="_json" @bind:event="oninput" disabled="@_busy" rows="16" spellcheck="false" placeholder="{&#10;  &quot;example&quot;: true&#10;}"></textarea>
+                        <div class="json-editor-actions">
+                            <button class="files-secondary" @onclick="ValidateJson" disabled="@_busy">Validate JSON</button>
+                            <button class="files-secondary" @onclick="SaveAsync" disabled="@_busy">Save document</button>
+                            @if (_selected is not null) { <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Mark for deletion</button> }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_validation)) { <p role="status" class="files-message">@_validation</p> }
+                        @if (_selected is not null) { <p class="files-empty">SHA-256: @_selected.Sha256<br />Compressed: @FormatSize(_selected.CompressedSizeBytes)</p> }
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+}
+
+@code {
+    private bool _checkingSession = true;
+    private bool _signedIn;
+    private bool _loading;
+    private bool _busy;
+    private string _email = "";
+    private string _search = "";
+    private string _message = "";
+    private string _validation = "";
+    private string _documentType = "";
+    private string _json = "{\n  \n}";
+    private int _page = 1;
+    private const int _pageSize = 25;
+    private long _total;
+    private List<JsonItem> _items = [];
+    private JsonItem? _selected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/auth/me");
+            if (response.IsSuccessStatusCode)
+            {
+                var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
+                _email = session?.Email ?? "";
+                _signedIn = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(_email);
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server."; }
+        finally { _checkingSession = false; }
+
+        if (!_signedIn) { Navigation.NavigateTo("/", replace: true); return; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _message = "";
+        try
+        {
+            var url = $"api/json?page={_page}&pageSize={_pageSize}&search={Uri.EscapeDataString(_search.Trim())}";
+            using var response = await Http.GetAsync(url);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) { Navigation.NavigateTo("/", replace: true); return; }
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<ListResponse>();
+            _items = result?.Items ?? [];
+            _total = result?.Total ?? 0;
+        }
+        catch (HttpRequestException) { _message = "Unable to load JSON documents. Verify API access and server connectivity."; }
+        finally { _loading = false; }
+    }
+
+    private async Task SelectAsync(JsonItem item)
+    {
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var response = await Http.GetAsync($"api/json/{item.Id}");
+            response.EnsureSuccessStatusCode();
+            var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
+            if (detail is null) return;
+            _selected = item;
+            _documentType = detail.DocumentType;
+            _json = detail.Json;
+            _validation = "";
+        }
+        catch (HttpRequestException) { _message = "Unable to load the selected JSON document."; }
+        finally { _busy = false; }
+    }
+
+    private void NewDocument()
+    {
+        _selected = null;
+        _documentType = "";
+        _json = "{\n  \n}";
+        _validation = "";
+        _message = "";
+    }
+
+    private void ValidateJson()
+    {
+        try { using var parsed = JsonDocument.Parse(_json); _validation = "Valid JSON."; }
+        catch (JsonException ex) { _validation = $"Invalid JSON: {ex.Message}"; }
+    }
+
+    private async Task SaveAsync()
+    {
+        _message = "";
+        _validation = "";
+        if (string.IsNullOrWhiteSpace(_documentType) || _documentType.Trim().Length > 200) { _message = "Document type is required (maximum 200 characters)."; return; }
+        try { using var parsed = JsonDocument.Parse(_json); }
+        catch (JsonException ex) { _validation = $"Invalid JSON: {ex.Message}"; return; }
+
+        _busy = true;
+        try
+        {
+            var payload = new SaveRequest(_documentType.Trim(), _json);
+            using var response = _selected is null
+                ? await Http.PostAsJsonAsync("api/json", payload)
+                : await Http.PutAsJsonAsync($"api/json/{_selected.Id}", payload);
+            if (!response.IsSuccessStatusCode)
+            {
+                _message = response.StatusCode == System.Net.HttpStatusCode.RequestEntityTooLarge
+                    ? "JSON document exceeds the configured server limit."
+                    : $"Save failed (HTTP {(int)response.StatusCode}). Check your access and input.";
+                return;
+            }
+            _message = "JSON document saved.";
+            _page = 1;
+            await LoadAsync();
+            var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
+            if (detail is not null)
+            {
+                _selected = new JsonItem(detail.Id, detail.DocumentType, detail.UncompressedSizeBytes, detail.CompressedSizeBytes, detail.Sha256, detail.CreatedUtc, detail.UpdatedUtc, detail.Status, detail.OwnerId, detail.RowVersion);
+                _documentType = detail.DocumentType;
+                _json = detail.Json;
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to save JSON document."; }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_selected is null) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/json/{_selected.Id}");
+            if (!response.IsSuccessStatusCode) { _message = $"Delete failed (HTTP {(int)response.StatusCode})."; return; }
+            _message = "Document marked for deletion.";
+            NewDocument();
+            await LoadAsync();
+        }
+        catch (HttpRequestException) { _message = "Unable to delete JSON document."; }
+        finally { _busy = false; }
+    }
+
+    private async Task PreviousAsync() { if (_page > 1) { _page--; await LoadAsync(); } }
+    private async Task NextAsync() { if (_page * _pageSize < _total) { _page++; await LoadAsync(); } }
+    private static string FormatSize(long bytes) => bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024d:0.0} KB" : $"{bytes / (1024d * 1024):0.0} MB";
+
+    private sealed record SessionResponse(string Email, string? Role);
+    private sealed record SaveRequest(string DocumentType, string Json);
+    private sealed record ListResponse(List<JsonItem> Items, long Total, int Page, int PageSize);
+    private sealed record JsonItem(Guid Id, string DocumentType, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
+    private sealed record JsonDetails(Guid Id, string DocumentType, string Json, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
+}
