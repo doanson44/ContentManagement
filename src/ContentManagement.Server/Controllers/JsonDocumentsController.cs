@@ -33,7 +33,10 @@ public sealed class JsonDocumentsController(
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            query = query.Where(x => x.DocumentType.Contains(term) || x.Sha256 == term || x.Id.ToString() == term);
+            if (Guid.TryParse(term, out var id))
+                query = query.Where(x => x.DocumentType.Contains(term) || x.Sha256 == term || x.Id == id);
+            else
+                query = query.Where(x => x.DocumentType.Contains(term) || x.Sha256 == term);
         }
         if (status.HasValue) query = query.Where(x => x.Status == status.Value);
 
