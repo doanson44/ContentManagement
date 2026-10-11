@@ -139,14 +139,20 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     }
 
     [Fact]
-    public async Task Create_rejects_payload_over_configured_size_limit()
+    public async Task Create_accepts_json_larger_than_previous_default_limit()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonWrite], maxJsonDocumentBytes: 32);
+        using var factory = CreateFactory([ScopePolicies.JsonWrite, ScopePolicies.JsonRead]);
         using var client = CreateClient(factory);
+        var type = $"large-{Guid.NewGuid():N}";
+        var json = "{\"payload\":\"" + new string('x', 10 * 1024 * 1024 + 1) + "\"}";
 
-        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, $"large-{Guid.NewGuid():N}", "{\"value\":\"" + new string('x', 128) + "\"}"));
+        using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, type, json));
 
-        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(created);
+        Assert.Equal(json.Length, created.UncompressedSizeBytes);
+        Assert.Equal(json, created.Json);
     }
 
     [Fact]
@@ -167,8 +173,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         Assert.All(result.Items, item => Assert.Equal("Active", item.Status.ToString()));
     }
 
-    private WebApplicationFactory<Program> CreateFactory(string[] scopes, long maxJsonDocumentBytes = 10_485_760) =>
-        new JsonApiTestApplicationFactory(ApiKey, scopes, db.ConnectionString, maxJsonDocumentBytes);
+    private WebApplicationFactory<Program> CreateFactory(string[] scopes) =>
+        new JsonApiTestApplicationFactory(ApiKey, scopes, db.ConnectionString);
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -178,7 +184,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     }
 
     private sealed class JsonApiTestApplicationFactory(
-        string apiKey, string[] scopes, string connectionString, long maxJsonDocumentBytes)
+        string apiKey, string[] scopes, string connectionString)
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -190,8 +196,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
                 {
                     ["Authentication:ApiKey"] = apiKey,
                     ["ConnectionStrings:ContentManagement"] = connectionString,
-                    ["Hangfire:Enabled"] = "false",
-                    ["ContentManagement:MaxJsonDocumentBytes"] = maxJsonDocumentBytes.ToString()
+                    ["Hangfire:Enabled"] = "false"
                 };
                 for (var index = 0; index < scopes.Length; index++)
                     settings[$"Authentication:Scopes:{index}"] = scopes[index];
