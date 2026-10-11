@@ -34,18 +34,18 @@ else
             <div class="files-workspace">
                 <section class="files-list-panel">
                     <div class="files-toolbar">
-                        <input aria-label="Search JSON documents" placeholder="Search by type or SHA-256…" @bind="_search" @bind:event="oninput" />
+                        <input aria-label="Search JSON documents" placeholder="Search by code, type or SHA-256…" @bind="_search" @bind:event="oninput" />
                         <button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Search</button>
                     </div>
                     @if (_loading) { <p class="files-empty">Loading JSON documents…</p> }
                     else if (_items.Count == 0) { <p class="files-empty">No JSON documents found.</p> }
                     else
                     {
-                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Document type</th><th>Size</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Code / document type</th><th>Size</th><th>Status</th><th>Updated</th></tr></thead><tbody>
                         @foreach (var item in _items)
                         {
                             <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id">
-                                <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.DocumentType</strong><small>@item.Id</small></span></button></td>
+                                <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.Code</strong><small>@item.DocumentType · @item.Id</small></span></button></td>
                                 <td>@FormatSize(item.UncompressedSizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
                             </tr>
                         }
@@ -56,6 +56,8 @@ else
                 <section class="files-preview-panel">
                     <div class="files-preview-heading"><div><p class="dashboard-eyebrow">DOCUMENT EDITOR</p><h2>@(_selected is null ? "New JSON document" : "Edit JSON document")</h2></div></div>
                     <div class="json-editor">
+                        <label for="document-code">Code <span>(optional; generated automatically if blank)</span></label>
+                        <input id="document-code" maxlength="100" @bind="_code" disabled="@_busy" placeholder="e.g. checkout.settings.v1" />
                         <label for="document-type">Document type</label>
                         <input id="document-type" maxlength="200" @bind="_documentType" disabled="@_busy" placeholder="e.g. application-settings" />
                         <label for="document-json">JSON payload</label>
@@ -83,6 +85,7 @@ else
     private string _search = "";
     private string _message = "";
     private string _validation = "";
+    private string _code = "";
     private string _documentType = "";
     private string _json = "{\n  \n}";
     private int _page = 1;
@@ -139,6 +142,7 @@ else
             var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
             if (detail is null) return;
             _selected = item;
+            _code = detail.Code;
             _documentType = detail.DocumentType;
             _json = detail.Json;
             _validation = "";
@@ -150,6 +154,7 @@ else
     private void NewDocument()
     {
         _selected = null;
+        _code = "";
         _documentType = "";
         _json = "{\n  \n}";
         _validation = "";
@@ -173,7 +178,7 @@ else
         _busy = true;
         try
         {
-            var payload = new SaveRequest(_documentType.Trim(), _json);
+            var payload = new SaveRequest(string.IsNullOrWhiteSpace(_code) ? null : _code.Trim(), _documentType.Trim(), _json);
             using var response = _selected is null
                 ? await Http.PostAsJsonAsync("api/json", payload)
                 : await Http.PutAsJsonAsync($"api/json/{_selected.Id}", payload);
@@ -190,7 +195,8 @@ else
             var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
             if (detail is not null)
             {
-                _selected = new JsonItem(detail.Id, detail.DocumentType, detail.UncompressedSizeBytes, detail.CompressedSizeBytes, detail.Sha256, detail.CreatedUtc, detail.UpdatedUtc, detail.Status, detail.OwnerId, detail.RowVersion);
+                _selected = new JsonItem(detail.Id, detail.Code, detail.DocumentType, detail.UncompressedSizeBytes, detail.CompressedSizeBytes, detail.Sha256, detail.CreatedUtc, detail.UpdatedUtc, detail.Status, detail.OwnerId, detail.RowVersion);
+                _code = detail.Code;
                 _documentType = detail.DocumentType;
                 _json = detail.Json;
             }
@@ -220,8 +226,8 @@ else
     private static string FormatSize(long bytes) => bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024d:0.0} KB" : $"{bytes / (1024d * 1024):0.0} MB";
 
     private sealed record SessionResponse(string Email, string? Role);
-    private sealed record SaveRequest(string DocumentType, string Json);
+    private sealed record SaveRequest(string? Code, string DocumentType, string Json);
     private sealed record ListResponse(List<JsonItem> Items, long Total, int Page, int PageSize);
-    private sealed record JsonItem(Guid Id, string DocumentType, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
-    private sealed record JsonDetails(Guid Id, string DocumentType, string Json, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
+    private sealed record JsonItem(Guid Id, string Code, string DocumentType, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
+    private sealed record JsonDetails(Guid Id, string Code, string DocumentType, string Json, long UncompressedSizeBytes, long CompressedSizeBytes, string Sha256, DateTime CreatedUtc, DateTime UpdatedUtc, string Status, string? OwnerId, string RowVersion);
 }
