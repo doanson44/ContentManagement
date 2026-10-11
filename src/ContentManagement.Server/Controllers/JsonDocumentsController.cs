@@ -2,13 +2,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Compression;
-using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Controllers;
 
@@ -16,8 +14,7 @@ namespace ContentManagement.Server.Controllers;
 [Route("api/json")]
 public sealed class JsonDocumentsController(
     ContentManagementDbContext db,
-    IContentCompressor compressor,
-    IOptions<ContentManagementOptions> options) : ControllerBase
+    IContentCompressor compressor) : ControllerBase
 {
     private const int MaxPageSize = 100;
 
@@ -71,8 +68,7 @@ public sealed class JsonDocumentsController(
             return Conflict(new { message = "A JSON document with this code already exists." });
 
         CompressedContent compressed;
-        try { compressed = compressor.CompressJson(request.Json, options.Value.MaxJsonDocumentBytes); }
-        catch (InvalidDataException) { return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "JSON document exceeds the configured size limit." }); }
+        try { compressed = compressor.CompressJson(request.Json); }
         catch (System.Text.Json.JsonException) { return BadRequest(new { message = "Json must contain valid JSON." }); }
 
         var now = DateTime.UtcNow;
@@ -105,11 +101,7 @@ public sealed class JsonDocumentsController(
         var entity = await db.JsonDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (entity is null || entity.Status is ContentStatus.MarkedForDeletion or ContentStatus.Deleting or ContentStatus.Deleted)
             return NotFound();
-        try { return Ok(ToDetails(entity, compressor.DecompressJson(entity.CompressedPayload, options.Value.MaxJsonDocumentBytes))); }
-        catch (InvalidDataException)
-        {
-            return Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Stored JSON is invalid or exceeds the configured limit.");
-        }
+        try { return Ok(ToDetails(entity, compressor.DecompressJson(entity.CompressedPayload))); }
         catch (System.Text.Json.JsonException)
         {
             return Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Stored JSON is corrupted.");
@@ -134,8 +126,7 @@ public sealed class JsonDocumentsController(
             return Conflict(new { message = "A JSON document with this code already exists." });
 
         CompressedContent compressed;
-        try { compressed = compressor.CompressJson(request.Json, options.Value.MaxJsonDocumentBytes); }
-        catch (InvalidDataException) { return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "JSON document exceeds the configured size limit." }); }
+        try { compressed = compressor.CompressJson(request.Json); }
         catch (System.Text.Json.JsonException) { return BadRequest(new { message = "Json must contain valid JSON." }); }
 
         entity.Code = code;
