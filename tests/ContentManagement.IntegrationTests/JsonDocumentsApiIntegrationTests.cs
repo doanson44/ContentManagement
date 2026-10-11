@@ -65,6 +65,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         Assert.NotNull(created);
         Assert.NotEqual(Guid.Empty, created.Id);
         Assert.Equal(type, created.DocumentType);
+        Assert.StartsWith("manual-code-", created.Code);
         Assert.Equal(originalJson, created.Json);
         Assert.Equal(originalJson.Length, created.UncompressedSizeBytes);
         Assert.True(created.CompressedSizeBytes > 0);
@@ -98,7 +99,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var getAfterDelete = await client.GetAsync($"/api/json/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
 
-        using var updateAfterDelete = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(type, originalJson));
+        using var updateAfterDelete = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(created.Code, type, originalJson));
         Assert.Equal(HttpStatusCode.NotFound, updateAfterDelete.StatusCode);
     }
 
