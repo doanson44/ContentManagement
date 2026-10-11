@@ -60,7 +60,7 @@ else
                         <input id="document-code" maxlength="100" @bind="_code" disabled="@_busy" placeholder="e.g. checkout.settings.v1" />
                         <label for="document-type">Document type</label>
                         <input id="document-type" maxlength="200" @bind="_documentType" disabled="@_busy" placeholder="e.g. application-settings" />
-                        <label for="document-json">JSON payload</label>
+                        <label for="document-json">JSON payload <span>(no application-level character limit)</span></label>
                         <textarea id="document-json" @bind="_json" @bind:event="oninput" disabled="@_busy" rows="16" spellcheck="false" placeholder="{&#10;  &quot;example&quot;: true&#10;}"></textarea>
                         <div class="json-editor-actions">
                             <button class="files-secondary" @onclick="ValidateJson" disabled="@_busy">Validate JSON</button>
@@ -184,9 +184,7 @@ else
                 : await Http.PutAsJsonAsync($"api/json/{_selected.Id}", payload);
             if (!response.IsSuccessStatusCode)
             {
-                _message = response.StatusCode == System.Net.HttpStatusCode.RequestEntityTooLarge
-                    ? "JSON document exceeds the configured server limit."
-                    : $"Save failed (HTTP {(int)response.StatusCode}). Check your access and input.";
+                _message = $"Save failed (HTTP {(int)response.StatusCode}). Check your access and input.";
                 return;
             }
             _message = "JSON document saved.";
