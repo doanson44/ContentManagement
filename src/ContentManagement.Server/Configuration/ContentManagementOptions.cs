@@ -12,6 +12,4 @@ public sealed class ContentManagementOptions
     [Range(1, long.MaxValue)]
     public long MaxUploadBytes { get; init; } = 104_857_600;
 
-    [Range(1, long.MaxValue)]
-    public long MaxJsonDocumentBytes { get; init; } = 10_485_760;
 }
