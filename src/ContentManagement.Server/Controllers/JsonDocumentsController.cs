@@ -89,9 +89,11 @@ public sealed class JsonDocumentsController(
         {
             await db.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException) when (await db.JsonDocuments.AnyAsync(x => x.Code == code, cancellationToken))
+        catch (DbUpdateException)
         {
-            return Conflict(new { message = "A JSON document with this code already exists." });
+            if (await db.JsonDocuments.AnyAsync(x => x.Code == code, cancellationToken))
+                return Conflict(new { message = "A JSON document with this code already exists." });
+            throw;
         }
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity, request.Json));
     }
@@ -125,7 +127,7 @@ public sealed class JsonDocumentsController(
         if (string.IsNullOrWhiteSpace(request.DocumentType) || request.DocumentType.Trim().Length > 200)
             return BadRequest(new { message = "DocumentType is required and must not exceed 200 characters." });
         if (request.Json is null) return BadRequest(new { message = "Json is required." });
-        var code = NormalizeOrGenerateCode(request.Code);
+        var code = string.IsNullOrWhiteSpace(request.Code) ? entity.Code : NormalizeOrGenerateCode(request.Code);
         if (code is null)
             return BadRequest(new { message = "Code may contain only letters, numbers, dots, underscores and hyphens, and must start with a letter or number." });
         if (await db.JsonDocuments.AnyAsync(x => x.Id != id && x.Code == code, cancellationToken))
