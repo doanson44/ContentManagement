@@ -6,6 +6,9 @@ public sealed class JsonDocumentRecord
 {
     public Guid Id { get; set; }
 
+    [Required, MaxLength(100)]
+    public string Code { get; set; } = string.Empty;
+
     [Required, MaxLength(200)]
     public string DocumentType { get; set; } = string.Empty;
 
