@@ -17,7 +17,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 
 ## JSON document codes
 
-Each JSON document has a unique `Code` in addition to its internal GUID. The admin editor lets you enter a code when creating or editing a document. Leave the code blank on create to have the server generate a value in the form `json-<guid>`. Codes are trimmed, limited to 100 characters, and may contain letters, numbers, dots, underscores, and hyphens; the first character must be a letter or number. Duplicate codes return HTTP 409. Existing records receive stable generated codes through the `AddJsonDocumentCode` migration. The JSON list search matches code, document type, SHA-256, and GUID.
+Each JSON document has a unique `Code` in addition to its internal GUID. Deleting a JSON document through `DELETE /api/json/{id}` permanently removes its row and payload from SQL Server immediately; JSON documents do not use the soft-delete/grace-period workflow. The admin editor lets you enter a code when creating or editing a document. Leave the code blank on create to have the server generate a value in the form `json-<guid>`. Codes are trimmed, limited to 100 characters, and may contain letters, numbers, dots, underscores, and hyphens; the first character must be a letter or number. Duplicate codes return HTTP 409. Existing records receive stable generated codes through the `AddJsonDocumentCode` migration. The JSON list search matches code, document type, SHA-256, and GUID.
 
 For API creation, send an optional `code` field with `documentType` and `json`. Omitting or sending a blank code generates one. For updates, omitting/blanking `code` preserves the existing code.
 
