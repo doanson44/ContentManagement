@@ -72,10 +72,12 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 
         using var list = await client.GetAsync($"/api/json?search={Uri.EscapeDataString(type)}&page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
-        var listing = await list.Content.ReadFromJsonAsync<JsonDocumentListResponse>();
+        var listBody = await list.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(originalJson, listBody, StringComparison.Ordinal);
+        var listing = System.Text.Json.JsonSerializer.Deserialize<JsonDocumentListResponse>(
+            listBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         Assert.NotNull(listing);
         Assert.Contains(listing.Items, item => item.Id == created.Id);
-        Assert.DoesNotContain(listing.Items, item => item.GetType().GetProperty("Json") is not null);
 
         using var update = await client.PutAsJsonAsync($"/api/json/{created.Id}", new UpdateJsonDocumentRequest(type + "-updated", updatedJson));
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
