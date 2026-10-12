@@ -223,13 +223,13 @@ Responsive behavior is designed around content width rather than device detectio
 
 - Wide desktop: dashboard navigation and file preview can use multi-column layouts.
 - Tablet and compact desktop: file workspace stacks when side-by-side panels become constrained; dashboard navigation wraps.
-- Mobile: content and forms use a single column, toolbar controls wrap, tables retain a bounded horizontal-scroll region, modals respect the dynamic viewport, and Quick Notes places the list above the editor.
+- Mobile: content and forms use a single column, toolbar controls wrap, file/JSON/API-client tables become labeled record cards, modals respect the dynamic viewport, and Quick Notes places the list above the editor.
 - Reduced-motion preferences are respected by limiting animations and transitions.
 
 ### Responsive verification checklist
 
 Before release, verify the application in browser device emulation and at least one real touch device. Suggested viewport widths: 320, 375, 390, 430, 768, 820, 1024, 1280, and 1440 CSS pixels.
 
-Check dashboard navigation, file search/upload/list/preview, JSON tables and row actions, API client tables, setup forms, CRUD modals, Quick Notes list/editor/save actions, keyboard focus, and page-level horizontal overflow. A table may scroll horizontally inside its own region where preserving all columns is necessary; the entire page should not gain unintended horizontal scrolling.
+Check dashboard navigation, file search/upload/list/preview, JSON cards and row actions, API-client cards, setup forms, CRUD modals, Quick Notes list/editor/save actions, keyboard focus, and page-level horizontal overflow. On mobile, verify every table value has a visible field label and action buttons remain usable; desktop tables retain their tabular layout.
 
 This checklist documents the intended verification procedure; it is not a claim that every viewport or real device has already been tested.
