@@ -120,10 +120,17 @@ button {
 }
 
 .files-preview-content video,
-.files-preview-content iframe,
 .files-preview-content img {
     display: block;
     max-width: 100%;
+    height: auto;
+}
+
+.files-preview-content iframe {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
     height: auto;
 }
 
