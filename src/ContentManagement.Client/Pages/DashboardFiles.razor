@@ -274,6 +274,7 @@ else
     private static bool IsVideo(string t)=>t.StartsWith("video/",StringComparison.OrdinalIgnoreCase);
     private static bool IsWmv(string fileName)=>Path.GetExtension(fileName).Equals(".wmv",StringComparison.OrdinalIgnoreCase); 
     private static string PreviewContentType(FileItem file) =>
+        IsWmv(file.FileName) ? "video/mp4" :
         file.ContentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) ||
         string.IsNullOrWhiteSpace(file.ContentType)
             ? Path.GetExtension(file.FileName).ToLowerInvariant() switch
@@ -282,7 +283,6 @@ else
                 ".webm" => "video/webm",
                 ".ogv" or ".ogg" => "video/ogg",
                 ".mov" => "video/quicktime",
-                ".wmv" => "video/mp4",
                 _ => file.ContentType
             }
             : file.ContentType;
