@@ -399,6 +399,13 @@ else
         }
     }
 
+    private void DismissSecret()
+    {
+        _newApiKey = "";
+        _secretClientId = null;
+        _copyMessage = "";
+    }
+
     private static string ScopeDescription(string scope) => scope switch
     {
         "files.read" => "List file metadata and download file content.",
