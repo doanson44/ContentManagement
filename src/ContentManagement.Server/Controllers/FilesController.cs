@@ -51,7 +51,8 @@ public sealed class FilesController(
             })
             .ToListAsync(cancellationToken);
         var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion))).ToList();
+            f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion),
+            Url.ActionLink(nameof(Content), values: new { id = f.Id }) ?? $"/api/files/{f.Id}/content")).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
@@ -386,7 +387,8 @@ public sealed class FilesController(
         Convert.ToBase64String(file.RowVersion));
 
     public sealed record FileListItem(Guid Id, string FileName, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc,
+        DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
     public sealed record FileDetails(Guid Id, string FileName, string ContentType, long SizeBytes,
         string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
