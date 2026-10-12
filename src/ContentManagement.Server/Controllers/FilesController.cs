@@ -149,7 +149,7 @@ public sealed class FilesController(
         {
             return StatusCode(StatusCodes.Status504GatewayTimeout, new { message = "WMV preview conversion exceeded the time limit." });
         }
-        catch (InvalidOperationException exception)
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             logger.LogWarning(exception, "WMV preview unavailable for file {FileId}.", id);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "WMV preview is unavailable. Check FFmpeg installation and server configuration." });
