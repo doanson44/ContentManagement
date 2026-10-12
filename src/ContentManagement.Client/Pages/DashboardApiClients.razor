@@ -41,11 +41,6 @@ else if (_signedIn)
                     <div class="setup-notice @(_isError ? "error" : "success")" role="alert">@_message</div>
                 }
                 <div class="setup-form-grid">
-                <div class="setup-section-heading">
-                    <div class="setup-section-icon cleanup-setup-icon">+</div>
-                    <div><h2 id="api-client-form-title">@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
-                </div>
-                <div class="setup-form-grid">
                     <label>Client name<input maxlength="100" @bind="_name" disabled="@_busy" placeholder="e.g. Storefront backend" /></label>
                 </div>
                 <h3>Permissions</h3>
