@@ -20,7 +20,7 @@ else if (_signedIn)
                     <h1>API clients</h1>
                     <p class="dashboard-subtitle">Create credentials and grant only the file and JSON permissions each integration requires.</p>
                 </div>
-                <a class="files-secondary" href="/dashboard">Dashboard</a>
+                <div class="setup-actions"><button class="setup-primary" @onclick="OpenCreate" disabled="@_busy">Create API client</button><a class="files-secondary" href="/dashboard">Dashboard</a></div>
             </header>
 
             @if (!string.IsNullOrWhiteSpace(_message))
@@ -38,10 +38,13 @@ else if (_signedIn)
                 </section>
             }
 
-            <section class="setup-card">
+            @if (_formOpen)
+            {
+            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="setup-card cm-modal" role="dialog" aria-modal="true" aria-labelledby="api-client-form-title" @onclick:stopPropagation="true">
                 <div class="setup-section-heading">
                     <div class="setup-section-icon cleanup-setup-icon">+</div>
-                    <div><h2>@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
+                    <div><h2 id="api-client-form-title">@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
                 </div>
                 <div class="setup-form-grid">
                     <label>Client name<input maxlength="100" @bind="_name" disabled="@_busy" placeholder="e.g. Storefront backend" /></label>
@@ -65,11 +68,13 @@ else if (_signedIn)
                     @if (_selected is not null)
                     {
                         <button class="files-secondary" @onclick="RotateSecretAsync" disabled="@_busy">Rotate secret</button>
-                        <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete client</button>
-                        <button class="files-secondary" @onclick="ResetForm" disabled="@_busy">Cancel edit</button>
+                        <button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete client</button>
+                        <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                     }
                 </div>
             </section>
+            </div>
+            }
 
             <section class="setup-card">
                 <div class="setup-section-heading"><div><h2>Registered clients</h2><p>@_clients.Count clients loaded</p></div><button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Refresh</button></div>
@@ -98,6 +103,19 @@ else if (_signedIn)
                     </div>
                 }
             </section>
+            @if (_confirmDelete && _selected is not null)
+            {
+                <div class="cm-modal-backdrop" role="presentation" @onclick="() => _confirmDelete = false">
+                    <section class="cm-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="api-client-delete-title" @onclick:stopPropagation="true">
+                        <h2 id="api-client-delete-title">Delete API client?</h2>
+                        <p>Permanently delete <strong>@_selected.Name</strong>? Its API key will stop working immediately.</p>
+                        <div class="setup-actions">
+                            <button class="files-secondary" @onclick="() => _confirmDelete = false" disabled="@_busy">Cancel</button>
+                            <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Confirm delete</button>
+                        </div>
+                    </section>
+                </div>
+            }
             <footer class="dashboard-footer">ContentManagement <span>·</span> API client management</footer>
         </main>
     </div>
@@ -117,6 +135,7 @@ else
     private bool _loading = true;
     private bool _signedIn;
     private bool _busy;
+    private bool _formOpen, _confirmDelete;
     private bool _isError;
     private bool _isActive = true;
     private string _name = "";
@@ -218,6 +237,8 @@ else
                 }
                 SetMessage(_selected is null ? "API client created." : "API client updated.", false);
                 ResetForm();
+                _formOpen = false;
+                _confirmDelete = false;
                 await LoadAsync();
             }
         }
@@ -249,9 +270,7 @@ else
     private async Task DeleteAsync()
     {
         if (_selected is null || _busy) return;
-        var confirmed = await JSConfirmAsync($"Permanently delete API client '{_selected.Name}'? Its key will stop working immediately.");
-        if (!confirmed) return;
-
+        if (!_confirmDelete) return;
         _busy = true;
         try
         {
@@ -263,14 +282,14 @@ else
             }
 
             ResetForm();
+            _formOpen = false;
+            _confirmDelete = false;
             SetMessage("API client deleted.", false);
             await LoadAsync();
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
     }
-
-    private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", new object?[] { message });
 
     private void Edit(ApiClientItem client)
     {
@@ -279,6 +298,24 @@ else
         _scopes = new HashSet<string>(client.Scopes, StringComparer.Ordinal);
         _isActive = client.IsActive;
         _message = "";
+        _formOpen = true;
+        _confirmDelete = false;
+    }
+
+    private void OpenCreate()
+    {
+        ResetForm();
+        _message = "";
+        _formOpen = true;
+        _confirmDelete = false;
+    }
+
+    private void CloseForm()
+    {
+        if (_busy) return;
+        _formOpen = false;
+        _confirmDelete = false;
+        ResetForm();
     }
 
     private void ToggleScope(string scope, Microsoft.AspNetCore.Components.ChangeEventArgs args)
