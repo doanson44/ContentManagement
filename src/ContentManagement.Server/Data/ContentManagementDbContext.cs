@@ -21,7 +21,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.ToTable("SystemSettings");
             entity.HasKey(settings => settings.Id);
             entity.Property(settings => settings.Id).ValueGeneratedNever();
-            entity.HasData(new SystemSettings { Id = 1, SmtpPort = 587, SmtpUseSsl = true, SmtpFromName = "ContentManagement", StaleFileAgeDays = 90, CleanupIntervalHours = 24, DeletionGracePeriodDays = 7, UpdatedUtc = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc) });
+            entity.HasData(new SystemSettings { Id = 1, SmtpPort = 587, SmtpUseSsl = true, SmtpFromName = "ContentManagement", StaleFileAgeDays = 90, UpdatedUtc = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc) });
         });
 
         modelBuilder.Entity<AdminOtpChallenge>(entity =>
