@@ -2,6 +2,7 @@ using ContentManagement.Server.Auth;
 using ContentManagement.Server.BackgroundJobs;
 using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
+using ContentManagement.Server.HealthChecks;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Storage;
 using Hangfire;
@@ -55,6 +56,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ContentManagement", "DataProtectionKeys")));
@@ -94,7 +96,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<ContentManagementDbContext>("sqlserver", tags: ["ready"]);
+    .AddDbContextCheck<ContentManagementDbContext>("sqlserver", tags: ["ready"])
+    .AddCheck<ExternalFileApiHealthCheck>("external-file-api", tags: ["ready"]);
 
 var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
