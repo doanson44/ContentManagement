@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text;
-using Microsoft.AspNetCore.Authorization;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
