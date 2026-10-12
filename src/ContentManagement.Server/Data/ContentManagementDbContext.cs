@@ -82,6 +82,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasIndex(file => new { file.Status, file.CreatedUtc });
             entity.HasIndex(file => file.OwnerId);
             entity.Property(file => file.SizeBytes).HasColumnType("bigint");
+            entity.Property(file => file.UploadSource).HasDefaultValue(FileUploadSource.Local);
             entity.Property(file => file.RowVersion).IsRowVersion();
         });
 
