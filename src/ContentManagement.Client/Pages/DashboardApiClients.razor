@@ -270,7 +270,7 @@ else
         finally { _busy = false; }
     }
 
-    private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", message);
+    private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", new object?[] { message });
 
     private void Edit(ApiClientItem client)
     {
