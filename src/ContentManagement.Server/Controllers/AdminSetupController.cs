@@ -24,18 +24,14 @@ public sealed class AdminSetupController(
     [HttpPut]
     public async Task<ActionResult<SetupResponse>> Save([FromBody] UpdateSetupRequest request, CancellationToken cancellationToken)
     {
-        if (request.StaleFileAgeDays is < 1 or > 3650 ||
-            request.CleanupIntervalHours is < 1 or > 24 ||
-            request.DeletionGracePeriodDays is < 1 or > 90)
-            return BadRequest(new { message = "Cleanup values are outside the allowed range." });
+        if (request.StaleFileAgeDays is < 1 or > 3650)
+            return BadRequest(new { message = "File age threshold must be between 1 and 3650 days." });
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
         settings.StaleFileAgeDays = request.StaleFileAgeDays;
-        settings.CleanupIntervalHours = request.CleanupIntervalHours;
-        settings.DeletionGracePeriodDays = request.DeletionGracePeriodDays;
         settings.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Administrator updated stale-file cleanup settings.");
+        logger.LogInformation("Administrator updated stale-file cleanup threshold.");
         return Ok(ToResponse(settings));
     }
 
@@ -52,17 +48,9 @@ public sealed class AdminSetupController(
     }
 
     private static SetupResponse ToResponse(SystemSettings settings) =>
-        new(settings.StaleFileAgeDays, settings.CleanupIntervalHours,
-            settings.DeletionGracePeriodDays, settings.UpdatedUtc);
+        new(settings.StaleFileAgeDays);
 
-    public sealed record UpdateSetupRequest(
-        int StaleFileAgeDays,
-        int CleanupIntervalHours,
-        int DeletionGracePeriodDays);
+    public sealed record UpdateSetupRequest(int StaleFileAgeDays);
 
-    public sealed record SetupResponse(
-        int StaleFileAgeDays,
-        int CleanupIntervalHours,
-        int DeletionGracePeriodDays,
-        DateTime UpdatedUtc);
+    public sealed record SetupResponse(int StaleFileAgeDays);
 }
