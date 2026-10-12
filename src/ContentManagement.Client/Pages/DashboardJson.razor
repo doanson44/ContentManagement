@@ -73,7 +73,6 @@ else
                             <button class="files-secondary" @onclick="ValidateJson" disabled="@_busy">Validate JSON</button>
                             <button class="files-secondary" @onclick="SaveAsync" disabled="@_busy">Save document</button>
                             <button class="files-secondary" @onclick="CloseEditor" disabled="@_busy">Cancel</button>
-                            @if (_selected is not null) { <button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete permanently</button> }
                         </div>
                         @if (!string.IsNullOrWhiteSpace(_validation)) { <p role="status" class="files-message">@_validation</p> }
                         @if (_selected is not null) { <p class="files-empty">SHA-256: @_selected.Sha256<br />Compressed: @FormatSize(_selected.CompressedSizeBytes)</p> }
