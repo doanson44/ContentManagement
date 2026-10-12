@@ -16,6 +16,22 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
+
+## WMV browser previews
+
+Browsers generally do not decode WMV/Windows Media codecs natively. File management therefore keeps the original WMV binary unchanged and serves a cached H.264/AAC MP4 rendition from the authenticated `GET /api/files/{id}/preview` endpoint. Other video types continue to stream their original file, and downloads always return the original binary.
+
+Install a trusted FFmpeg build on the server and configure `ContentManagement:FfmpegPath` to its absolute executable path (for example, `C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe` on Windows). If omitted, the server searches for `ffmpeg` on the process PATH. Example environment configuration:
+
+```powershell
+$env:ContentManagement__FfmpegPath = "C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe"
+# Optional: keep generated previews outside the binary storage directory.
+$env:ContentManagement__PreviewCacheRoot = "D:\\ContentManagement\\preview-cache"
+$env:ContentManagement__MaxPreviewCacheBytes = "2147483648"
+```
+
+Preview generation is lazy and cached by the original file's SHA-256, serialized to one conversion at a time, limited to two minutes per conversion, and uses at most two FFmpeg encoder threads. The default preview cache limit is 2 GiB; old cached MP4s are pruned when new previews are generated. Ensure the service account can execute FFmpeg and read/write the configured storage/cache directories. FFmpeg must be available in the deployment environment separately; it is not bundled into the application ZIP. A source with unsupported codecs or a conversion that exceeds the timeout will return a preview error while leaving the original file downloadable.
+
 ## JSON document codes
 
 Each JSON document has a unique `Code` in addition to its internal GUID. Deleting a JSON document through `DELETE /api/json/{id}` permanently removes its row and payload from SQL Server immediately; JSON documents do not use the soft-delete/grace-period workflow. The admin editor lets you enter a code when creating or editing a document. Leave the code blank on create to have the server generate a value in the form `json-<guid>`. Codes are trimmed, limited to 100 characters, and may contain letters, numbers, dots, underscores, and hyphens; the first character must be a letter or number. Duplicate codes return HTTP 409. Existing records receive stable generated codes through the `AddJsonDocumentCode` migration. The JSON list search matches code, document type, SHA-256, and GUID.
