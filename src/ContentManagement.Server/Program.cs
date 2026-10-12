@@ -110,6 +110,7 @@ if (hangfireEnabled)
 
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
 builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
+builder.Services.AddSingleton<FileViewTokenService>();
 builder.Services.AddSingleton<IVideoPreviewService, FfmpegVideoPreviewService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
