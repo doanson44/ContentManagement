@@ -262,18 +262,6 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseHttpsRedirection();
 
-// Keep API documentation out of production deployments by default.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement API v1");
-        options.RoutePrefix = "swagger";
-        options.DocumentTitle = "ContentManagement API";
-    });
-}
-
 app.Use(async (context, next) =>
 {
     var method = context.Request.Method;
