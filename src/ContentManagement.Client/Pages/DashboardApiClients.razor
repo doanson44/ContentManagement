@@ -68,6 +68,25 @@ else if (_signedIn)
             </div>
             }
 
+            @if (_secretClientId is not null && !string.IsNullOrWhiteSpace(_newApiKey))
+            {
+                <section class="setup-card api-key-result-card">
+                    <h2>Copy the new API key now</h2>
+                    <p>Client: <strong>@(_clients.FirstOrDefault(client => client.Id == _secretClientId)?.Name ?? "API client")</strong>. This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
+                    <div class="api-key-copy-row">
+                        <textarea class="api-key-value" rows="3" readonly aria-label="New API key">@_newApiKey</textarea>
+                        <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy to clipboard</button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_copyMessage))
+                    {
+                        <p class="api-key-copy-status" role="status">@_copyMessage</p>
+                    }
+                    <div class="setup-actions">
+                        <button class="files-secondary" @onclick="DismissSecret" disabled="@_busy">Dismiss key</button>
+                    </div>
+                </section>
+            }
+
             <section class="setup-card">
                 <div class="setup-section-heading"><div><h2>Registered clients</h2><p>@_clients.Count clients loaded</p></div><button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Refresh</button></div>
                 @if (_clients.Count == 0)
@@ -78,30 +97,13 @@ else if (_signedIn)
                 {
                     <div class="files-table-wrap">
                         <table class="files-table">
-                            <thead><tr><th>Name</th><th>Client ID</th><th>Secret key (one-time)</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Name</th><th>Client ID</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
                             <tbody>
                                 @foreach (var client in _clients)
                                 {
                                     <tr @key="client.Id">
                                         <td><strong>@client.Name</strong><small>@client.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
                                         <td><code>@client.ClientId</code></td>
-                                        <td class="api-client-secret-cell">
-                                            @if (_secretClientId == client.Id && !string.IsNullOrWhiteSpace(_newApiKey))
-                                            {
-                                                <div class="api-key-copy-row">
-                                                    <textarea class="api-key-value" rows="2" readonly aria-label="@($"One-time secret key for {client.Name}")">@_newApiKey</textarea>
-                                                    <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy</button>
-                                                </div>
-                                                @if (!string.IsNullOrWhiteSpace(_copyMessage))
-                                                {
-                                                    <small class="api-key-copy-status" role="status">@_copyMessage</small>
-                                                }
-                                            }
-                                            else
-                                            {
-                                                <span class="files-empty">Not available</span>
-                                            }
-                                        </td>
                                         <td>@string.Join(", ", client.Scopes)</td>
                                         <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
                                         <td class="api-client-row-actions">
