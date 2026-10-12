@@ -114,8 +114,8 @@ public sealed class ExternalFileApiClient(
     private static string NormalizeBaseUrl(string baseUrl)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttps && !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)))
-            throw new InvalidOperationException("External File API URL must use HTTPS (HTTP is allowed only for localhost).");
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            throw new InvalidOperationException("External File API URL must be an absolute HTTP or HTTPS URL.");
         return uri.ToString().TrimEnd('/');
     }
 
