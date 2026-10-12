@@ -5,7 +5,7 @@ using ContentManagement.FileApi.Configuration;
 
 namespace ContentManagement.FileApi.Storage;
 
-public sealed record StoredFileInfo(string FilePath, long SizeBytes, string Sha256);
+public sealed record StoredFileInfo(string FilePath, long SizeBytes, string Sha256);\npublic sealed record StoredFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
 
 public sealed class FileSizeLimitExceededException(long maximumBytes)
     : Exception($"File exceeds the configured upload limit of {maximumBytes} bytes.")
@@ -139,6 +139,44 @@ public sealed class FileStorageService
 
         File.Delete(fullPath);
         return true;
+    }
+
+    public IReadOnlyList<StoredFileInventoryItem> ListFiles(DateTime olderThanUtc)
+    {
+        var results = new List<StoredFileInventoryItem>();
+        var pending = new Stack<string>();
+        pending.Push(_rootPath);
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    continue;
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pending.Push(entry);
+                    continue;
+                }
+
+                var extension = Path.GetExtension(entry);
+                if (!extension.Equals(".bin", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var info = new FileInfo(entry);
+                if (info.LastWriteTimeUtc > olderThanUtc)
+                    continue;
+
+                var relative = Path.GetRelativePath(_rootPath, entry)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                results.Add(new StoredFileInventoryItem(relative, info.LastWriteTimeUtc, info.Length));
+            }
+        }
+
+        return results;
     }
 
     public string GetContentType(string filePath)
