@@ -12,6 +12,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<AdminOtpChallenge> AdminOtpChallenges => Set<AdminOtpChallenge>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
+    public DbSet<QuickNote> QuickNotes => Set<QuickNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +59,17 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.Property(client => client.ScopesJson).HasMaxLength(1000).IsRequired();
             entity.HasIndex(client => new { client.IsActive, client.Name });
             entity.Property(client => client.RowVersion).IsRowVersion();
+        });
+
+        modelBuilder.Entity<QuickNote>(entity =>
+        {
+            entity.ToTable("QuickNotes");
+            entity.HasKey(note => note.Id);
+            entity.Property(note => note.Id).ValueGeneratedNever();
+            entity.Property(note => note.Title).HasMaxLength(200).IsRequired();
+            entity.Property(note => note.Content).HasMaxLength(20000).IsRequired();
+            entity.HasIndex(note => new { note.IsPinned, note.UpdatedUtc });
+            entity.Property(note => note.RowVersion).IsRowVersion();
         });
 
         modelBuilder.Entity<StoredFile>(entity =>
