@@ -19,6 +19,12 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
 
+## Orphan binary cleanup
+
+When Hangfire is enabled, the server runs the `orphan-file-cleanup` job daily at 01:00 in the server's local time zone. It reconciles local filesystem `.bin` files and External File API `.bin` files against SQL metadata and deletes binaries that have no corresponding file record for that provider.
+
+The job uses a 24-hour grace period to avoid racing with an upload whose binary has been written but whose metadata has not yet committed. It skips reparse-point/symbolic-link entries, deletes at most 500 orphan candidates per provider per run, logs failures, and retries remaining candidates on a later daily run. External inventory is exposed only through the authenticated File API. Configure `Hangfire:Enabled=true` for the recurring job to be registered and executed. The cleanup is intentionally limited to `.bin` files; it does not remove preview cache files or arbitrary files under the storage root.
+
 ## Standalone File API
 
 `ContentManagement.FileApi` is an independent ASP.NET Core API with no database dependency. It stores files under `FileApi:RootPath` and accepts only relative `filePath` values; absolute paths, traversal segments, invalid segments, and symlink/reparse-point paths are rejected. Uploads never overwrite an existing path. The default upload limit is 100 MiB and is enforced while copying to a temporary file; the file is atomically moved into place after the upload succeeds. The API returns the file size and SHA-256 digest.
@@ -29,6 +35,7 @@ Endpoints:
 - `PUT /api/files?filePath=relative/path.ext` — multipart upload with a form field named `file` and a relative `filePath` query parameter.
 - `GET /api/files/download?filePath=relative/path.ext` — download as an attachment.
 - `GET /api/files/view?filePath=relative/path.ext` — inline view for safe image, PDF, audio, video, plain-text, and CSV types. HTML, SVG, and unknown file types are not rendered inline.
+- `GET /api/files/inventory?olderThanUtc=<UTC timestamp>` — authenticated inventory of old `.bin` files for server-side orphan reconciliation.
 - `GET /swagger` — Swagger UI with an `Authorize` button for the static API key.
 
 Configure the storage root and secret through environment variables (PowerShell example):
