@@ -359,7 +359,7 @@ else
 
         try
         {
-            var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", _newApiKey);
+            var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", new object?[] { _newApiKey });
             _copyMessage = copied
                 ? "API key copied to clipboard."
                 : "Automatic copy is unavailable in this HTTP browser context. Select the key text and copy it manually.";
