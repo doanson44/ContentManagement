@@ -286,7 +286,7 @@ public sealed class FilesController(
         Convert.ToBase64String(file.RowVersion), viewTokens.CreateRelativeUrl(file.Id));
 
     public sealed record FileListItem(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
     public sealed record FileDetails(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
         string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
