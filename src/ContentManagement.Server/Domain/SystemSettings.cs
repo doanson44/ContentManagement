@@ -30,5 +30,15 @@ public sealed class SystemSettings
 
     public int StaleFileAgeDays { get; set; } = 90;
 
+    [MaxLength(500)]
+    public string ExternalStorageBaseUrl { get; set; } = "";
+
+    [MaxLength(4096)]
+    public string ExternalStorageApiKeyProtected { get; set; } = "";
+
+    public long ExternalStorageQuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+
+    public bool ExternalStoragePreferred { get; set; }
+
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 }
