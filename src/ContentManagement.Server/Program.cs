@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using System.Threading.RateLimiting;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -246,6 +247,14 @@ catch (Exception exception)
 }
 
 app.UseSerilogRequestLogging();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement Server API v1");
+    });
+}
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler();
