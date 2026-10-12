@@ -104,3 +104,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .json-page .json-row-actions{display:flex;justify-content:flex-end;gap:.5rem;white-space:nowrap}
 .json-page .json-row-actions .files-secondary,.json-page .json-row-actions .files-danger{min-width:64px}
 @media(max-width:760px){.json-page .files-table-wrap{overflow-x:auto}.json-page .files-table{min-width:760px}}
+
+
+/* One-time API key display and copy action */
+.api-key-copy-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:.75rem;margin-top:1rem}.api-key-value{display:block;width:100%;min-width:0;min-height:92px;resize:vertical;padding:.8rem;border:1px solid #d0d5dd;border-radius:8px;background:#f9fafb;color:#101828;font: .82rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;word-break:break-all}.api-key-copy-button{align-self:stretch;min-width:150px}.api-key-copy-status{margin:.6rem 0 0;color:#067647;font-size:.8rem;line-height:1.5}
+@media(max-width:620px){.api-key-copy-row{grid-template-columns:1fr}.api-key-copy-button{min-height:42px}}
