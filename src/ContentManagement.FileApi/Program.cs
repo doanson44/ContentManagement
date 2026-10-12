@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using ContentManagement.FileApi.Auth;
 using ContentManagement.FileApi.Configuration;
 using ContentManagement.FileApi.Storage;
+using ContentManagement.FileApi.HealthChecks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
@@ -10,7 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddCheck<Db2HealthCheck>("db2", timeout: TimeSpan.FromSeconds(8));
 builder.Services.AddProblemDetails();
 
 builder.Services.AddOptions<FileApiOptions>()
