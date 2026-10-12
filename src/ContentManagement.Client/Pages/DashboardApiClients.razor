@@ -57,34 +57,12 @@ else if (_signedIn)
                 {
                     <label class="api-client-active"><input type="checkbox" @bind="_isActive" disabled="@_busy" /> Client enabled</label>
                 }
-                @if (!string.IsNullOrWhiteSpace(_newApiKey))
-                {
-                    <div class="api-key-inline-section">
-                        <h3>Copy the new API key now</h3>
-                        <p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
-                        <div class="api-key-copy-row">
-                            <textarea class="api-key-value" rows="3" readonly aria-label="New API key">@_newApiKey</textarea>
-                            <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy to clipboard</button>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(_copyMessage))
-                        {
-                            <p class="api-key-copy-status" role="status">@_copyMessage</p>
-                        }
-                        <div class="setup-actions">
-                            <button class="files-secondary" @onclick="DismissSecret" disabled="@_busy">Dismiss key</button>
-                        </div>
-                    </div>
-                }
                 <div class="setup-actions">
-                    @if (string.IsNullOrWhiteSpace(_newApiKey))
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">@(_selected is null ? "Create client" : "Save changes")</button>
+                    @if (_selected is not null)
                     {
-                        <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">@(_selected is null ? "Create client" : "Save changes")</button>
+                        <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                     }
-                    @if (_selected is not null && string.IsNullOrWhiteSpace(_newApiKey))
-                    {
-                        <button class="files-secondary" @onclick="RotateSecretAsync" disabled="@_busy">Rotate secret</button>
-                    }
-                    <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                 </div>
             </section>
             </div>
@@ -100,17 +78,35 @@ else if (_signedIn)
                 {
                     <div class="files-table-wrap">
                         <table class="files-table">
-                            <thead><tr><th>Name</th><th>Client ID</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Name</th><th>Client ID</th><th>Secret key (one-time)</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
                             <tbody>
                                 @foreach (var client in _clients)
                                 {
                                     <tr @key="client.Id">
                                         <td><strong>@client.Name</strong><small>@client.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
                                         <td><code>@client.ClientId</code></td>
+                                        <td class="api-client-secret-cell">
+                                            @if (_secretClientId == client.Id && !string.IsNullOrWhiteSpace(_newApiKey))
+                                            {
+                                                <div class="api-key-copy-row">
+                                                    <textarea class="api-key-value" rows="2" readonly aria-label="@($"One-time secret key for {client.Name}")">@_newApiKey</textarea>
+                                                    <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy</button>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(_copyMessage))
+                                                {
+                                                    <small class="api-key-copy-status" role="status">@_copyMessage</small>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="files-empty">Not available</span>
+                                            }
+                                        </td>
                                         <td>@string.Join(", ", client.Scopes)</td>
                                         <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
                                         <td class="api-client-row-actions">
                                             <button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button>
+                                            <button class="files-secondary" @onclick="() => RotateSecretAsync(client)" disabled="@_busy">Rotate</button>
                                             <button class="files-danger" @onclick="() => ConfirmDelete(client)" disabled="@_busy">Delete</button>
                                         </td>
                                     </tr>
@@ -158,6 +154,7 @@ else
     private string _name = "";
     private string _message = "";
     private string _newApiKey = "";
+    private Guid? _secretClientId;
     private string _copyMessage = "";
     private HashSet<string> _scopes = new(StringComparer.Ordinal);
     private List<ApiClientItem> _clients = [];
@@ -261,19 +258,13 @@ else
                     }
 
                     _newApiKey = created.ApiKey;
+                    _secretClientId = created.Client.Id;
                     _copyMessage = "";
-                    _selected = created.Client;
-                    _name = created.Client.Name;
-                    _scopes = new HashSet<string>(created.Client.Scopes, StringComparer.Ordinal);
-                    _isActive = created.Client.IsActive;
                 }
-                SetMessage(creating ? "API client created. Copy the one-time key below." : "API client updated.", false);
+                SetMessage(creating ? "API client created. Copy its one-time key from the list below." : "API client updated.", false);
                 _confirmDelete = false;
-                if (!creating && string.IsNullOrWhiteSpace(_newApiKey))
-                {
-                    _formOpen = false;
-                    ResetForm();
-                }
+                _formOpen = false;
+                ResetForm();
                 await LoadAsync();
             }
         }
@@ -281,13 +272,14 @@ else
         finally { _busy = false; }
     }
 
-    private async Task RotateSecretAsync()
+    private async Task RotateSecretAsync(ApiClientItem client)
     {
-        if (_selected is null || _busy) return;
+        if (_busy) return;
+        _selected = client;
         _busy = true;
         try
         {
-            using var response = await Http.PostAsync($"api/admin/api-clients/{_selected.Id}/rotate-secret", null);
+            using var response = await Http.PostAsync($"api/admin/api-clients/{client.Id}/rotate-secret", null);
             if (!response.IsSuccessStatusCode)
             {
                 SetMessage("Unable to rotate the API client secret.", true);
@@ -301,8 +293,11 @@ else
                 return;
             }
             _newApiKey = result.ApiKey;
+            _secretClientId = client.Id;
             _copyMessage = "";
-            SetMessage("Secret rotated. The previous key is now invalid. Copy the new key below.", false);
+            SetMessage($"Secret rotated for {client.Name}. The previous key is now invalid; copy the new key from that client's row.", false);
+            _formOpen = false;
+            await LoadAsync();
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
@@ -357,8 +352,6 @@ else
     private void OpenCreate()
     {
         ResetForm();
-        _newApiKey = "";
-        _copyMessage = "";
         _message = "";
         _formOpen = true;
         _confirmDelete = false;
@@ -370,8 +363,6 @@ else
         _formOpen = false;
         _confirmDelete = false;
         ResetForm();
-        _newApiKey = "";
-        _copyMessage = "";
         _message = "";
     }
 
@@ -404,12 +395,6 @@ else
         {
             _copyMessage = "Automatic copy failed. Select the key text and copy it manually.";
         }
-    }
-
-    private void DismissSecret()
-    {
-        _newApiKey = "";
-        _copyMessage = "";
     }
 
     private static string ScopeDescription(string scope) => scope switch
