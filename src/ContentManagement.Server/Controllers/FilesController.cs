@@ -237,6 +237,9 @@ public sealed class FilesController(
 
         if (!Path.GetExtension(file.FileName).Equals(".wmv", StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { message = "Transcoded preview is only available for WMV files." });
+        if (file.UploadSource == FileUploadSource.ExternalServer)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "WMV transcoded preview is not yet supported for files stored in the External File API. Download or view the original file instead." });
 
         try
         {
