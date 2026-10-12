@@ -18,7 +18,7 @@ public sealed class AddQuickNotes : Migration
             {
                 Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                Content = table.Column<string>(type: "nvarchar(20000)", maxLength: 20000, nullable: false),
+                Content = table.Column<string>(type: "nvarchar(max)", maxLength: 20000, nullable: false),
                 IsPinned = table.Column<bool>(type: "bit", nullable: false),
                 CreatedUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
                 UpdatedUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
