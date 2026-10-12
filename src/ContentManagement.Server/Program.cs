@@ -100,6 +100,7 @@ var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
 {
     builder.Services.AddScoped<StaleFileCleanupJob>();
+    builder.Services.AddScoped<OrphanFileCleanupJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -117,8 +118,9 @@ if (hangfireEnabled)
 }
 
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
-builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
-builder.Services.AddSingleton<FileViewTokenService>();
+builder.Services.AddSingleton<FileSystemStorage>();
+builder.Services.AddSingleton<IFileStorage>(services => services.GetRequiredService<FileSystemStorage>());
+builder.Services.AddSingleton<IFileStorageInventory>(services => services.GetRequiredService<FileSystemStorage>());
 builder.Services.AddSingleton<IVideoPreviewService, FfmpegVideoPreviewService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
@@ -300,6 +302,8 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
     var recurringJobManager = app.Services.GetRequiredService<IRecurringJobManager>();
     recurringJobManager.AddOrUpdate<StaleFileCleanupJob>(
         "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily());
+    recurringJobManager.AddOrUpdate<OrphanFileCleanupJob>(
+        "orphan-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(1), TimeZoneInfo.Local);
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]
