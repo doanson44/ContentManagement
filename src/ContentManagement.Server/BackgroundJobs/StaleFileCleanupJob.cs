@@ -44,7 +44,7 @@ public sealed class StaleFileCleanupJob(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the grace period.", file.Id);
+                logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the file-age threshold.", file.Id);
                 file.Status = ContentStatus.MarkedForDeletion;
                 file.UpdatedUtc = DateTime.UtcNow;
                 db.Entry(file).State = EntityState.Modified;
