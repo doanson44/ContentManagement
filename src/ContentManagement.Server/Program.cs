@@ -39,18 +39,18 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "Authenticated content storage API. API-key callers must provide the X-Content-Management-Key header with the required scope."
     });
-    options.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
         Name = ApiKeyAuthenticationDefaults.HeaderName,
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
         Description = "Server-side API key. Do not place this key in Blazor WebAssembly client code."
     });
-    options.AddSecurityDefinition("AdminCookie", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("AdminCookie", new OpenApiSecurityScheme
     {
         Name = "__Host-ContentManagement.Admin",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
         Description = "Administrator session cookie issued by the OTP sign-in flow."
     });
     options.OperationFilter<SwaggerAuthenticationOperationFilter>();
