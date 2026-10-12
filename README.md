@@ -200,3 +200,16 @@ A new client receives an API key in the form cm_<client-id>.<secret>. Store the 
 Managed API clients are authenticated through the existing X-Content-Management-Key header. The configured static API key remains supported for backward compatibility and continues to use its configured scope set. Managed API client scopes are enforced by the same file and JSON authorization policies. Client management endpoints require the administrator cookie and are not available to API-key callers.
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
+
+## Quick Notes
+
+Quick Notes is an administrator-only personal note area available at `/dashboard/quick-notes`. It stores plain-text titles and content in SQL Server, independently of file and JSON content. The dashboard includes a Quick Notes entry for the signed-in administrator.
+
+- Notes can be created, searched by title/content, pinned, edited, and deleted.
+- Title length is limited to 200 characters; note content is limited to 20,000 characters.
+- Edits are sent after a 650 ms debounce. The UI reports pending, saving, saved, and failed states; failed edits remain in the editor.
+- Updates use SQL Server row-version concurrency checks. A stale update returns HTTP 409 rather than silently overwriting a concurrent change.
+- The API is under `/api/admin/quick-notes` and requires the administrator cookie and `Administrator` role. It is not available to API-key clients.
+- Migration `202610120001_AddQuickNotes` creates the notes table and its ordering index. The server applies pending EF Core migrations at startup, so back up the database and review the migration before deployment.
+
+Quick Notes currently supports the application's configured administrator session, not multiple independent user accounts. Content is plain text; rich text, attachments, sharing, reminders, and note version history are not implemented.
