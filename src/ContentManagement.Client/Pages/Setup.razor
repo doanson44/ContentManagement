@@ -17,7 +17,7 @@ else if (_signedIn)
                 <div>
                     <p class="dashboard-eyebrow">SYSTEM CONFIGURATION</p>
                     <h1>Setup</h1>
-                    <p class="dashboard-subtitle">Configure when stale files are marked for removal and permanently deleted.</p>
+                    <p class="dashboard-subtitle">Configure how long files remain marked for deletion before permanent cleanup.</p>
                 </div>
                 <div class="session-pill"><span></span> Session active</div>
             </header>
@@ -30,15 +30,24 @@ else if (_signedIn)
             <section class="setup-card">
                 <div class="setup-section-heading">
                     <div class="setup-section-icon cleanup-setup-icon">⌫</div>
-                    <div><h2>Stale file cleanup</h2><p>Old active files are marked first, then permanently removed after a grace period.</p></div>
+                    <div>
+                        <h2>Stale file cleanup</h2>
+                        <p>Files marked for deletion are permanently removed after the configured number of days.</p>
+                    </div>
                 </div>
                 <div class="setup-form-grid cleanup-grid">
-                    <label>File age threshold (days)<input type="number" min="1" max="3650" @bind="_model.StaleFileAgeDays" /><small>Files older than this are eligible for cleanup.</small></label>
-                    <label>Cleanup check interval (hours)<input type="number" min="1" max="24" @bind="_model.CleanupIntervalHours" /><small>Hangfire checks hourly and runs when this interval has elapsed.</small></label>
-                    <label>Deletion grace period (days)<input type="number" min="1" max="90" @bind="_model.DeletionGracePeriodDays" /><small>Marked files remain in the database during this period.</small></label>
+                    <label>File age threshold (days)
+                        <input type="number" min="1" max="3650" @bind="_model.StaleFileAgeDays" />
+                        <small>Age is counted from when a file was marked for deletion. The cleanup job runs daily.</small>
+                    </label>
                 </div>
-                <div class="cleanup-warning"><strong>Requires Hangfire</strong><span>Cleanup runs only when Hangfire is enabled and its SQL Server connection is configured. Changes apply to future runs; files are not deleted immediately when you save.</span></div>
-                <div class="setup-actions"><button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save settings</button></div>
+                <div class="cleanup-warning">
+                    <strong>Scheduled cleanup</strong>
+                    <span>The daily background job removes eligible files marked for deletion. Saving this setting does not delete files immediately.</span>
+                </div>
+                <div class="setup-actions">
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save settings</button>
+                </div>
             </section>
             <footer class="dashboard-footer">ContentManagement <span>·</span> System setup</footer>
         </main>
@@ -92,14 +101,7 @@ else
 
             var settings = await response.Content.ReadFromJsonAsync<SetupResponse>();
             if (settings is not null)
-            {
-                _model = new SetupModel
-                {
-                    StaleFileAgeDays = settings.StaleFileAgeDays,
-                    CleanupIntervalHours = settings.CleanupIntervalHours,
-                    DeletionGracePeriodDays = settings.DeletionGracePeriodDays
-                };
-            }
+                _model = new SetupModel { StaleFileAgeDays = settings.StaleFileAgeDays };
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _loading = false; }
@@ -108,6 +110,12 @@ else
     private async Task SaveAsync()
     {
         if (_busy) return;
+        if (_model.StaleFileAgeDays is < 1 or > 3650)
+        {
+            SetMessage("File age threshold must be between 1 and 3650 days.", true);
+            return;
+        }
+
         _busy = true;
         _message = "";
         try
@@ -126,32 +134,14 @@ else
         finally { _busy = false; }
     }
 
-    private async Task LogoutAsync()
-    {
-        if (_busy) return;
-        _busy = true;
-        try
-        {
-            using var response = await Http.PostAsync("api/auth/logout", null);
-            if (response.IsSuccessStatusCode)
-                Navigation.NavigateTo("/", forceLoad: true, replace: true);
-            else
-                SetMessage("Unable to sign out. Please try again.", true);
-        }
-        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
-        finally { _busy = false; }
-    }
-
     private void SetMessage(string message, bool error) { _message = message; _isError = error; }
 
     private sealed class SetupModel
     {
         public int StaleFileAgeDays { get; set; } = 90;
-        public int CleanupIntervalHours { get; set; } = 24;
-        public int DeletionGracePeriodDays { get; set; } = 7;
     }
 
     private sealed record SessionResponse(string Email, string? Role);
-    private sealed record SetupResponse(int StaleFileAgeDays, int CleanupIntervalHours, int DeletionGracePeriodDays);
+    private sealed record SetupResponse(int StaleFileAgeDays);
     private sealed record ApiMessage(string? Message);
 }
