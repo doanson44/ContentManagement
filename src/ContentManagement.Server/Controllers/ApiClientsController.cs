@@ -37,7 +37,10 @@ public sealed class ApiClientsController(ContentManagementDbContext db) : Contro
     {
         var client = await db.ApiClients.AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
-        return client is null ? NotFound() : Ok(ToResponse(client));
+        if (client is null)
+            return NotFound();
+
+        return Ok(ToResponse(client));
     }
 
     [HttpPost]
