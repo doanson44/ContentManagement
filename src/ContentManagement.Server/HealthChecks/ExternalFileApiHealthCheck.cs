@@ -31,10 +31,9 @@ public sealed class ExternalFileApiHealthCheck(
             }
 
             if (!Uri.TryCreate(settings.ExternalStorageBaseUrl, UriKind.Absolute, out var baseUri) ||
-                (baseUri.Scheme != Uri.UriSchemeHttps &&
-                 !(baseUri.Scheme == Uri.UriSchemeHttp && baseUri.IsLoopback)))
+                (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
             {
-                return HealthCheckResult.Unhealthy("External File API URL is invalid or does not use HTTPS.");
+                return HealthCheckResult.Unhealthy("External File API URL must be an absolute HTTP or HTTPS URL.");
             }
 
             var key = _protector.Unprotect(settings.ExternalStorageApiKeyProtected);
