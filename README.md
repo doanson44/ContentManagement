@@ -171,7 +171,7 @@ Pending migrations are applied automatically during server startup. Before deplo
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module is available on the `feature/file-management-crud` branch and provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. API clients and JSON management remain placeholders. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. JSON management supports listing, searching, validation, create, update, and permanent delete. API client management supports create/list/update/disable/secret rotation/delete and per-client file/JSON scopes. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
 
 
 ## Managed API client administration
