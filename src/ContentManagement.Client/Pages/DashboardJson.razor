@@ -16,7 +16,7 @@ else if (!_signedIn)
 }
 else
 {
-    <div class="dashboard-page files-page">
+    <div class="dashboard-page files-page json-page">
         <aside class="dashboard-sidebar">
             <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
             <p class="sidebar-label">WORKSPACE</p><a class="sidebar-link" href="/dashboard">⌂ Dashboard</a>
@@ -28,7 +28,7 @@ else
         <main class="dashboard-main files-main">
             <header class="dashboard-header">
                 <div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>JSON documents</h1><p class="dashboard-subtitle">Create, validate, edit and manage compressed JSON documents.</p></div>
-                <button class="files-secondary" @onclick="NewDocument" disabled="@_busy">New document</button>
+                <button class="files-secondary" @onclick="OpenNewDocument" disabled="@_busy">New document</button>
             </header>
             @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
             <div class="files-workspace">
@@ -41,20 +41,27 @@ else
                     else if (_items.Count == 0) { <p class="files-empty">No JSON documents found.</p> }
                     else
                     {
-                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Code / document type</th><th>Size</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Code / document type</th><th>Size</th><th>Status</th><th>Updated</th><th class="json-actions-heading">Actions</th></tr></thead><tbody>
                         @foreach (var item in _items)
                         {
                             <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id">
                                 <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.Code</strong><small>@item.DocumentType · @item.Id</small></span></button></td>
                                 <td>@FormatSize(item.UncompressedSizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td class="json-row-actions">
+                                    <button class="files-secondary" @onclick="() => SelectAsync(item)" disabled="@_busy">Edit</button>
+                                    <button class="files-danger" @onclick="() => ConfirmDelete(item)" disabled="@_busy">Delete</button>
+                                </td>
                             </tr>
                         }
                         </tbody></table></div>
                         <div class="files-pagination"><span>@_total documents · Page @_page</span><button class="files-secondary" @onclick="PreviousAsync" disabled="@(_page <= 1 || _loading)">Previous</button><button class="files-secondary" @onclick="NextAsync" disabled="@(_page * _pageSize >= _total || _loading)">Next</button></div>
                     }
                 </section>
-                <section class="files-preview-panel">
-                    <div class="files-preview-heading"><div><p class="dashboard-eyebrow">DOCUMENT EDITOR</p><h2>@(_selected is null ? "New JSON document" : "Edit JSON document")</h2></div></div>
+                @if (_editorOpen)
+                {
+                <div class="cm-modal-backdrop" role="presentation" @onclick="CloseEditor">
+                <section class="files-preview-panel cm-modal" role="dialog" aria-modal="true" aria-labelledby="json-editor-title" @onclick:stopPropagation="true">
+                    <div class="files-preview-heading"><div><p class="dashboard-eyebrow">DOCUMENT EDITOR</p><h2 id="json-editor-title">@(_selected is null ? "New JSON document" : "Edit JSON document")</h2></div></div>
                     <div class="json-editor">
                         <label for="document-code">Code <span>(optional; generated automatically if blank)</span></label>
                         <input id="document-code" maxlength="100" @bind="_code" disabled="@_busy" placeholder="e.g. checkout.settings.v1" />
@@ -65,13 +72,28 @@ else
                         <div class="json-editor-actions">
                             <button class="files-secondary" @onclick="ValidateJson" disabled="@_busy">Validate JSON</button>
                             <button class="files-secondary" @onclick="SaveAsync" disabled="@_busy">Save document</button>
-                            @if (_selected is not null) { <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete permanently</button> }
+                            <button class="files-secondary" @onclick="CloseEditor" disabled="@_busy">Cancel</button>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(_validation)) { <p role="status" class="files-message">@_validation</p> }
                         @if (_selected is not null) { <p class="files-empty">SHA-256: @_selected.Sha256<br />Compressed: @FormatSize(_selected.CompressedSizeBytes)</p> }
                     </div>
                 </section>
+                </div>
+                }
             </div>
+            @if (_confirmDelete && _selected is not null)
+            {
+                <div class="cm-modal-backdrop" role="presentation" @onclick="() => _confirmDelete = false">
+                    <section class="cm-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="json-delete-title" @onclick:stopPropagation="true">
+                        <h2 id="json-delete-title">Delete JSON document?</h2>
+                        <p>This permanently deletes <strong>@_selected.Code</strong> and its stored payload. This action cannot be undone.</p>
+                        <div class="setup-actions">
+                            <button class="files-secondary" @onclick="() => _confirmDelete = false" disabled="@_busy">Cancel</button>
+                            <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Confirm delete</button>
+                        </div>
+                    </section>
+                </div>
+            }
         </main>
     </div>
 }
@@ -81,6 +103,8 @@ else
     private bool _signedIn;
     private bool _loading;
     private bool _busy;
+    private bool _editorOpen;
+    private bool _confirmDelete;
     private string _email = "";
     private string _search = "";
     private string _message = "";
@@ -142,6 +166,7 @@ else
             var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
             if (detail is null) return;
             _selected = item;
+            _editorOpen = true;
             _code = detail.Code;
             _documentType = detail.DocumentType;
             _json = detail.Json;
@@ -159,6 +184,24 @@ else
         _json = "{\n  \n}";
         _validation = "";
         _message = "";
+        _editorOpen = true;
+        _confirmDelete = false;
+    }
+
+    private void ConfirmDelete(JsonItem item)
+    {
+        _selected = item;
+        _confirmDelete = true;
+        _message = "";
+    }
+
+    private void OpenNewDocument() => NewDocument();
+
+    private void CloseEditor()
+    {
+        if (_busy) return;
+        _editorOpen = false;
+        _confirmDelete = false;
     }
 
     private void ValidateJson()
@@ -188,6 +231,8 @@ else
                 return;
             }
             _message = "JSON document saved.";
+            _editorOpen = false;
+            _confirmDelete = false;
             _page = 1;
             await LoadAsync();
             var detail = await response.Content.ReadFromJsonAsync<JsonDetails>();
@@ -205,14 +250,17 @@ else
 
     private async Task DeleteAsync()
     {
-        if (_selected is null) return;
+        if (_selected is null || !_confirmDelete) return;
         _busy = true;
         try
         {
             using var response = await Http.DeleteAsync($"api/json/{_selected.Id}");
             if (!response.IsSuccessStatusCode) { _message = $"Delete failed (HTTP {(int)response.StatusCode})."; return; }
             _message = "Document permanently deleted.";
+            _confirmDelete = false;
+            _editorOpen = false;
             NewDocument();
+            _editorOpen = false;
             await LoadAsync();
         }
         catch (HttpRequestException) { _message = "Unable to delete JSON document."; }

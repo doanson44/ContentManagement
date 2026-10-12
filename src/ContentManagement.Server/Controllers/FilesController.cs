@@ -17,6 +17,7 @@ namespace ContentManagement.Server.Controllers;
 public sealed class FilesController(
     ContentManagementDbContext db,
     IFileStorage storage,
+    IVideoPreviewService videoPreviewService,
     IOptions<ContentManagementOptions> options,
     ILogger<FilesController> logger) : ControllerBase
 {
@@ -72,7 +73,7 @@ public sealed class FilesController(
         {
             Id = Guid.NewGuid(),
             FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
-            ContentType = SafeContentType(file.ContentType),
+            ContentType = ResolveContentType(file.ContentType, file.FileName),
             StorageKey = binary.StorageKey,
             SizeBytes = binary.SizeBytes,
             Sha256 = binary.Sha256,
@@ -122,9 +123,37 @@ public sealed class FilesController(
             var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
             Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
             Response.Headers["X-Content-Type-Options"] = "nosniff";
-            return File(stream, SafeContentType(file.ContentType), enableRangeProcessing: true);
+            return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
+    }
+
+    [HttpGet("{id:guid}/preview")]
+    [Authorize(Policy = ScopePolicies.FilesRead)]
+    public async Task<IActionResult> Preview(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        if (file is null || file.Status != ContentStatus.Active) return NotFound();
+
+        if (!Path.GetExtension(file.FileName).Equals(".wmv", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Transcoded preview is only available for WMV files." });
+
+        try
+        {
+            var previewPath = await videoPreviewService.GetWmvPreviewPathAsync(file.StorageKey, file.Sha256, cancellationToken);
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return PhysicalFile(previewPath, "video/mp4", enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException) { return NotFound(); }
+        catch (TimeoutException)
+        {
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new { message = "WMV preview conversion exceeded the time limit." });
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            logger.LogWarning(exception, "WMV preview unavailable for file {FileId}.", id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "WMV preview is unavailable. Check FFmpeg installation and server configuration." });
+        }
     }
 
     [HttpGet("{id:guid}/download")]
@@ -133,7 +162,7 @@ public sealed class FilesController(
     {
         var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
-        try { return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken), SafeContentType(file.ContentType), file.FileName, enableRangeProcessing: true); }
+        try { return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken), ResolveContentType(file.ContentType, file.FileName), file.FileName, enableRangeProcessing: true); }
         catch (FileNotFoundException) { return NotFound(); }
     }
 
@@ -156,6 +185,30 @@ public sealed class FilesController(
         return Ok(ToDetails(file));
     }
 
+    [HttpPost("{id:guid}/restore")]
+    [Authorize(Policy = ScopePolicies.FilesWrite)]
+    public async Task<IActionResult> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await db.Files.SingleOrDefaultAsync(
+            f => f.Id == id && f.Status == ContentStatus.MarkedForDeletion, cancellationToken);
+        if (file is null)
+            return Conflict(new { message = "Only files marked for deletion can be restored." });
+
+        file.Status = ContentStatus.Active;
+        file.UpdatedUtc = DateTime.UtcNow;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "File metadata changed. Refresh and retry." });
+        }
+
+        logger.LogInformation("Restored file {FileId} from marked-for-deletion state.", file.Id);
+        return Ok(ToDetails(file));
+    }
+
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = ScopePolicies.FilesDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
@@ -169,6 +222,33 @@ public sealed class FilesController(
             await db.SaveChangesAsync(cancellationToken);
         }
         return Accepted(new { file.Id, file.Status });
+    }
+
+    private static string ResolveContentType(string? value, string? fileName)
+    {
+        var candidate = value;
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            candidate.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant() switch
+            {
+                ".mp4" => "video/mp4",
+                ".m4v" => "video/mp4",
+                ".webm" => "video/webm",
+                ".ogv" => "video/ogg",
+                ".ogg" => "video/ogg",
+                ".mov" => "video/quicktime",
+                ".mp3" => "audio/mpeg",
+                ".m4a" => "audio/mp4",
+                ".wav" => "audio/wav",
+                ".oga" => "audio/ogg",
+                ".opus" => "audio/ogg",
+                ".vtt" => "text/vtt",
+                _ => candidate
+            };
+        }
+
+        return SafeContentType(candidate);
     }
 
     private static string SafeContentType(string? value)

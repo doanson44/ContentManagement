@@ -48,3 +48,68 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 /* Dashboard module cards are full-card navigation targets. */
 .module-card-link{color:inherit;text-decoration:none;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}.module-card-link:hover{border-color:var(--cm-primary);box-shadow:0 5px 16px rgba(0,0,0,.08);transform:translateY(-1px)}.module-card-link:focus-visible{outline:2px solid var(--cm-primary);outline-offset:3px}.module-card-link .module-footer .module-arrow{color:var(--cm-primary)}
+
+
+/* Accessible modal surfaces for administrator CRUD workflows. */
+.cm-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:1.25rem;background:rgba(16,24,40,.58);overflow-y:auto}.cm-modal{width:min(820px,100%);max-height:min(90vh,900px);overflow-y:auto;background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(16,24,40,.28);padding:clamp(1.25rem,3vw,2rem)}.cm-confirm-modal{width:min(480px,100%);background:#fff;border-radius:16px;padding:1.5rem;box-shadow:0 24px 80px rgba(16,24,40,.28)}.cm-confirm-modal h2{margin-top:0}.cm-confirm-modal p{line-height:1.6;color:#475467}.cm-confirm-modal .setup-actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem}@media(max-width:640px){.cm-modal-backdrop{padding:.5rem;align-items:flex-start}.cm-modal{max-height:calc(100vh - 1rem);padding:1rem}}
+
+
+/* Keep every CRUD/settings popup aligned with the application's dark theme. */
+.cm-modal-backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(4px)}
+.cm-modal,.cm-confirm-modal,.cm-modal .setup-card,.cm-confirm-modal .setup-card{background:var(--cm-surface);color:var(--cm-text);border:1px solid var(--cm-border);box-shadow:0 24px 80px rgba(0,0,0,.48)}
+.cm-modal h1,.cm-modal h2,.cm-modal h3,.cm-confirm-modal h1,.cm-confirm-modal h2,.cm-confirm-modal h3{color:var(--cm-text)}
+.cm-modal p,.cm-confirm-modal p,.cm-modal .muted,.cm-confirm-modal .muted{color:var(--cm-muted)}
+.cm-modal label,.cm-confirm-modal label,.cm-modal .json-editor label{color:var(--cm-text)}
+.cm-modal input:not([type=checkbox]):not([type=radio]),.cm-modal select,.cm-modal textarea,.cm-confirm-modal input:not([type=checkbox]):not([type=radio]),.cm-confirm-modal select,.cm-confirm-modal textarea,.cm-modal .json-editor input,.cm-modal .json-editor textarea{background:var(--cm-bg);color:var(--cm-text);border-color:var(--cm-border-strong);color-scheme:dark}
+.cm-modal input::placeholder,.cm-modal textarea::placeholder,.cm-confirm-modal input::placeholder,.cm-confirm-modal textarea::placeholder{color:var(--cm-subtle)}
+.cm-modal input:focus,.cm-modal select:focus,.cm-modal textarea:focus,.cm-confirm-modal input:focus,.cm-confirm-modal select:focus,.cm-confirm-modal textarea:focus{border-color:var(--cm-primary);box-shadow:0 0 0 3px rgba(120,169,255,.18);outline:none}
+.cm-modal .setup-form-grid label small,.cm-modal small,.cm-confirm-modal small{color:var(--cm-muted)}
+.cm-modal .setup-actions,.cm-confirm-modal .setup-actions{border-top-color:var(--cm-border)}
+.cm-modal .files-secondary,.cm-modal .setup-secondary,.cm-confirm-modal .files-secondary,.cm-confirm-modal .setup-secondary{background:var(--cm-surface-raised);color:var(--cm-text);border-color:var(--cm-border-strong)}
+.cm-modal .files-secondary:hover,.cm-modal .setup-secondary:hover,.cm-confirm-modal .files-secondary:hover,.cm-confirm-modal .setup-secondary:hover{border-color:var(--cm-primary)}
+.cm-modal .setup-notice.success,.cm-modal .files-message.success{background:#123326;border-color:#245c42;color:var(--cm-success)}
+.cm-modal .setup-notice.error,.cm-modal .files-message.error{background:#3b1c20;border-color:#74333a;color:var(--cm-danger)}
+.cm-modal .cleanup-warning{background:#342514;border-color:#704b1c;color:#fdb022}
+.cm-modal .cleanup-warning strong{color:#fdb022}
+.cm-modal .cm-modal-backdrop{background:rgba(0,0,0,.72)}
+
+
+/* JSON documents use the full workspace width, with row-level CRUD actions. */
+.json-page .files-workspace{display:block;width:100%}
+.json-page .files-list-panel{width:100%;max-width:none}
+.json-page .files-toolbar{width:100%}
+.json-page .files-toolbar input{min-width:0}
+.json-page .files-table{width:100%;table-layout:auto}
+.json-page .files-table th:first-child,.json-page .files-table td:first-child{width:45%}
+.json-page .files-table th:nth-child(2),.json-page .files-table td:nth-child(2),
+.json-page .files-table th:nth-child(3),.json-page .files-table td:nth-child(3),
+.json-page .files-table th:nth-child(4),.json-page .files-table td:nth-child(4){white-space:nowrap}
+.json-page .json-actions-heading{text-align:right}
+.json-page .json-row-actions{display:flex;justify-content:flex-end;gap:.5rem;white-space:nowrap}
+.json-page .json-row-actions .files-secondary,.json-page .json-row-actions .files-danger{min-width:64px}
+@media(max-width:760px){.json-page .files-table-wrap{overflow-x:auto}.json-page .files-table{min-width:760px}}
+
+
+/* JSON documents use the full workspace width, with row-level CRUD actions. */
+.json-page .files-workspace{display:block;width:100%}
+.json-page .files-list-panel{width:100%;max-width:none}
+.json-page .files-toolbar{width:100%}
+.json-page .files-toolbar input{min-width:0}
+.json-page .files-table{width:100%;table-layout:auto}
+.json-page .files-table th:first-child,.json-page .files-table td:first-child{width:45%}
+.json-page .files-table th:nth-child(2),.json-page .files-table td:nth-child(2),
+.json-page .files-table th:nth-child(3),.json-page .files-table td:nth-child(3),
+.json-page .files-table th:nth-child(4),.json-page .files-table td:nth-child(4){white-space:nowrap}
+.json-page .json-actions-heading{text-align:right}
+.json-page .json-row-actions{display:flex;justify-content:flex-end;gap:.5rem;white-space:nowrap}
+.json-page .json-row-actions .files-secondary,.json-page .json-row-actions .files-danger{min-width:64px}
+@media(max-width:760px){.json-page .files-table-wrap{overflow-x:auto}.json-page .files-table{min-width:760px}}
+
+
+/* One-time API key display and copy action */
+.api-key-copy-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:.75rem;margin-top:1rem}.api-key-value{display:block;width:100%;min-width:0;min-height:92px;resize:vertical;padding:.8rem;border:1px solid #d0d5dd;border-radius:8px;background:#f9fafb;color:#101828;font: .82rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;word-break:break-all}.api-key-copy-button{align-self:stretch;min-width:150px}.api-key-copy-status{margin:.6rem 0 0;color:#067647;font-size:.8rem;line-height:1.5}
+@media(max-width:620px){.api-key-copy-row{grid-template-columns:1fr}.api-key-copy-button{min-height:42px}}
+
+
+/* API client list row actions */
+.api-client-row-actions{display:flex;align-items:center;gap:.45rem;white-space:nowrap}.api-client-row-actions .files-secondary,.api-client-row-actions .files-danger{min-height:34px;padding:.35rem .65rem;font-size:.75rem}

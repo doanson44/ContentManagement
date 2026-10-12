@@ -20,29 +20,26 @@ else if (_signedIn)
                     <h1>API clients</h1>
                     <p class="dashboard-subtitle">Create credentials and grant only the file and JSON permissions each integration requires.</p>
                 </div>
-                <a class="files-secondary" href="/dashboard">Dashboard</a>
+                <div class="setup-actions"><button class="setup-primary" @onclick="OpenCreate" disabled="@_busy">Create API client</button><a class="files-secondary" href="/dashboard">Dashboard</a></div>
             </header>
 
-            @if (!string.IsNullOrWhiteSpace(_message))
+            @if (!string.IsNullOrWhiteSpace(_message) && !_formOpen && !_confirmDelete)
             {
                 <div class="setup-notice @(_isError ? "error" : "success")" role="status">@_message</div>
             }
 
-            @if (!string.IsNullOrWhiteSpace(_newApiKey))
+            @if (_formOpen)
             {
-                <section class="setup-card">
-                    <h2>Copy the new API key now</h2>
-                    <p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
-                    <textarea rows="3" readonly>@_newApiKey</textarea>
-                    <div class="setup-actions"><button class="setup-primary" @onclick="DismissSecret">I have stored the key</button></div>
-                </section>
-            }
-
-            <section class="setup-card">
+            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="setup-card cm-modal" role="dialog" aria-modal="true" aria-labelledby="api-client-form-title" @onclick:stopPropagation="true">
                 <div class="setup-section-heading">
                     <div class="setup-section-icon cleanup-setup-icon">+</div>
-                    <div><h2>@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
+                    <div><h2 id="api-client-form-title">@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
                 </div>
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <div class="setup-notice @(_isError ? "error" : "success")" role="alert">@_message</div>
+                }
                 <div class="setup-form-grid">
                     <label>Client name<input maxlength="100" @bind="_name" disabled="@_busy" placeholder="e.g. Storefront backend" /></label>
                 </div>
@@ -64,12 +61,31 @@ else if (_signedIn)
                     <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">@(_selected is null ? "Create client" : "Save changes")</button>
                     @if (_selected is not null)
                     {
-                        <button class="files-secondary" @onclick="RotateSecretAsync" disabled="@_busy">Rotate secret</button>
-                        <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete client</button>
-                        <button class="files-secondary" @onclick="ResetForm" disabled="@_busy">Cancel edit</button>
+                        <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                     }
                 </div>
             </section>
+            </div>
+            }
+
+            @if (_secretClientId is not null && !string.IsNullOrWhiteSpace(_newApiKey))
+            {
+                <section class="setup-card api-key-result-card">
+                    <h2>Copy the new API key now</h2>
+                    <p>Client: <strong>@(_clients.FirstOrDefault(client => client.Id == _secretClientId)?.Name ?? "API client")</strong>. This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
+                    <div class="api-key-copy-row">
+                        <textarea class="api-key-value" rows="3" readonly aria-label="New API key">@_newApiKey</textarea>
+                        <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy to clipboard</button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_copyMessage))
+                    {
+                        <p class="api-key-copy-status" role="status">@_copyMessage</p>
+                    }
+                    <div class="setup-actions">
+                        <button class="files-secondary" @onclick="DismissSecret" disabled="@_busy">Dismiss key</button>
+                    </div>
+                </section>
+            }
 
             <section class="setup-card">
                 <div class="setup-section-heading"><div><h2>Registered clients</h2><p>@_clients.Count clients loaded</p></div><button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Refresh</button></div>
@@ -90,7 +106,11 @@ else if (_signedIn)
                                         <td><code>@client.ClientId</code></td>
                                         <td>@string.Join(", ", client.Scopes)</td>
                                         <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
-                                        <td><button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button></td>
+                                        <td class="api-client-row-actions">
+                                            <button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button>
+                                            <button class="files-secondary" @onclick="() => RotateSecretAsync(client)" disabled="@_busy">Rotate</button>
+                                            <button class="files-danger" @onclick="() => ConfirmDelete(client)" disabled="@_busy">Delete</button>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -98,6 +118,19 @@ else if (_signedIn)
                     </div>
                 }
             </section>
+            @if (_confirmDelete && _selected is not null)
+            {
+                <div class="cm-modal-backdrop" role="presentation" @onclick="() => _confirmDelete = false">
+                    <section class="cm-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="api-client-delete-title" @onclick:stopPropagation="true">
+                        <h2 id="api-client-delete-title">Delete API client?</h2>
+                        <p>Permanently delete <strong>@_selected.Name</strong>? Its API key will stop working immediately.</p>
+                        <div class="setup-actions">
+                            <button class="files-secondary" @onclick="() => _confirmDelete = false" disabled="@_busy">Cancel</button>
+                            <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Confirm delete</button>
+                        </div>
+                    </section>
+                </div>
+            }
             <footer class="dashboard-footer">ContentManagement <span>·</span> API client management</footer>
         </main>
     </div>
@@ -117,11 +150,14 @@ else
     private bool _loading = true;
     private bool _signedIn;
     private bool _busy;
+    private bool _formOpen, _confirmDelete;
     private bool _isError;
     private bool _isActive = true;
     private string _name = "";
     private string _message = "";
     private string _newApiKey = "";
+    private Guid? _secretClientId;
+    private string _copyMessage = "";
     private HashSet<string> _scopes = new(StringComparer.Ordinal);
     private List<ApiClientItem> _clients = [];
     private ApiClientItem? _selected;
@@ -211,12 +247,25 @@ else
                     return;
                 }
 
-                if (_selected is null)
+                var creating = _selected is null;
+                if (creating)
                 {
                     var created = await response.Content.ReadFromJsonAsync<CreateResponse>();
-                    _newApiKey = created?.ApiKey ?? "";
+                    if (created is null || string.IsNullOrWhiteSpace(created.ApiKey))
+                    {
+                        SetMessage("API client was created, but the one-time key could not be read. Rotate the secret to generate a new key.", true);
+                        _formOpen = false;
+                        await LoadAsync();
+                        return;
+                    }
+
+                    _newApiKey = created.ApiKey;
+                    _secretClientId = created.Client.Id;
+                    _copyMessage = "";
                 }
-                SetMessage(_selected is null ? "API client created." : "API client updated.", false);
+                SetMessage(creating ? "API client created. Copy its one-time key from the list below." : "API client updated.", false);
+                _confirmDelete = false;
+                _formOpen = false;
                 ResetForm();
                 await LoadAsync();
             }
@@ -225,13 +274,14 @@ else
         finally { _busy = false; }
     }
 
-    private async Task RotateSecretAsync()
+    private async Task RotateSecretAsync(ApiClientItem client)
     {
-        if (_selected is null || _busy) return;
+        if (_busy) return;
+        _selected = client;
         _busy = true;
         try
         {
-            using var response = await Http.PostAsync($"api/admin/api-clients/{_selected.Id}/rotate-secret", null);
+            using var response = await Http.PostAsync($"api/admin/api-clients/{client.Id}/rotate-secret", null);
             if (!response.IsSuccessStatusCode)
             {
                 SetMessage("Unable to rotate the API client secret.", true);
@@ -239,8 +289,17 @@ else
             }
 
             var result = await response.Content.ReadFromJsonAsync<CreateResponse>();
-            _newApiKey = result?.ApiKey ?? "";
-            SetMessage("Secret rotated. The previous key is now invalid.", false);
+            if (result is null || string.IsNullOrWhiteSpace(result.ApiKey))
+            {
+                SetMessage("The secret was rotated, but the new key could not be read. Rotate again to generate another key.", true);
+                return;
+            }
+            _newApiKey = result.ApiKey;
+            _secretClientId = client.Id;
+            _copyMessage = "";
+            SetMessage($"Secret rotated for {client.Name}. The previous key is now invalid; copy the new key from that client's row.", false);
+            _formOpen = false;
+            await LoadAsync();
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
@@ -249,9 +308,7 @@ else
     private async Task DeleteAsync()
     {
         if (_selected is null || _busy) return;
-        var confirmed = await JSConfirmAsync($"Permanently delete API client '{_selected.Name}'? Its key will stop working immediately.");
-        if (!confirmed) return;
-
+        if (!_confirmDelete) return;
         _busy = true;
         try
         {
@@ -263,6 +320,8 @@ else
             }
 
             ResetForm();
+            _formOpen = false;
+            _confirmDelete = false;
             SetMessage("API client deleted.", false);
             await LoadAsync();
         }
@@ -270,7 +329,16 @@ else
         finally { _busy = false; }
     }
 
-    private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", new object?[] { message });
+    private void ConfirmDelete(ApiClientItem client)
+    {
+        _selected = client;
+        _name = client.Name;
+        _scopes = new HashSet<string>(client.Scopes, StringComparer.Ordinal);
+        _isActive = client.IsActive;
+        _message = "";
+        _confirmDelete = true;
+        _formOpen = false;
+    }
 
     private void Edit(ApiClientItem client)
     {
@@ -278,6 +346,25 @@ else
         _name = client.Name;
         _scopes = new HashSet<string>(client.Scopes, StringComparer.Ordinal);
         _isActive = client.IsActive;
+        _message = "";
+        _formOpen = true;
+        _confirmDelete = false;
+    }
+
+    private void OpenCreate()
+    {
+        ResetForm();
+        _message = "";
+        _formOpen = true;
+        _confirmDelete = false;
+    }
+
+    private void CloseForm()
+    {
+        if (_busy) return;
+        _formOpen = false;
+        _confirmDelete = false;
+        ResetForm();
         _message = "";
     }
 
@@ -295,7 +382,29 @@ else
         _isActive = true;
     }
 
-    private void DismissSecret() => _newApiKey = "";
+    private async Task CopyApiKeyAsync()
+    {
+        if (string.IsNullOrEmpty(_newApiKey)) return;
+
+        try
+        {
+            var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", new object?[] { _newApiKey });
+            _copyMessage = copied
+                ? "API key copied to clipboard."
+                : "Automatic copy is unavailable in this HTTP browser context. Select the key text and copy it manually.";
+        }
+        catch (Microsoft.JSInterop.JSException)
+        {
+            _copyMessage = "Automatic copy failed. Select the key text and copy it manually.";
+        }
+    }
+
+    private void DismissSecret()
+    {
+        _newApiKey = "";
+        _secretClientId = null;
+        _copyMessage = "";
+    }
 
     private static string ScopeDescription(string scope) => scope switch
     {

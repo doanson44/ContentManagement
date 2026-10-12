@@ -29,12 +29,12 @@ else
         </aside>
         <main class="dashboard-main files-main">
             <header class="dashboard-header"><div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>Files</h1><p class="dashboard-subtitle">Upload, preview and manage binary assets.</p></div>
-                <label class="files-upload-button">Upload file<InputFile OnChange="UploadAsync" disabled="@_busy" /></label>
+                <button class="files-upload-button" @onclick="OpenUpload" disabled="@_busy">Upload file</button>
             </header>
             @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
             <div class="files-workspace">
                 <section class="files-list-panel">
-                    <div class="files-toolbar"><input aria-label="Search files" placeholder="Search by filename or SHA-256…" @bind="_search" @bind:event="oninput" @onkeydown="SearchKeyDown" /><select aria-label="Filter status" @bind="_status" @bind:after="LoadAsync"><option value="">All statuses</option><option>Active</option><option>MarkedForDeletion</option><option>Uploading</option></select><button class="files-secondary" @onclick="LoadAsync">Search</button></div>
+                    <div class="files-toolbar"><input aria-label="Search files" placeholder="Search by filename or SHA-256…" @bind="_search" @bind:event="oninput" @onkeydown="SearchKeyDown" /><select aria-label="Filter status" @bind="_status" @bind:after="LoadAsync"><option value="">All statuses</option><option>Active</option><option>MarkedForDeletion</option><option>Deleting</option><option>Uploading</option></select><button class="files-secondary" @onclick="LoadAsync">Search</button></div>
                     @if (_loading) { <p class="files-empty">Loading files…</p> }
                     else if (_items.Count == 0) { <p class="files-empty">No files found. Upload a file to get started.</p> }
                     else {
@@ -47,30 +47,89 @@ else
                 <section class="files-preview-panel">
                     @if (_selected is null) { <div class="files-preview-placeholder"><span>▤</span><h2>Select a file</h2><p>Preview and metadata will appear here.</p></div> }
                     else {
-                        <div class="files-preview-heading"><div><p class="dashboard-eyebrow">FILE PREVIEW</p><h2>@_selected.FileName</h2><p>@FormatSize(_selected.SizeBytes) · @_selected.ContentType</p></div><button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete</button></div>
+                        <div class="files-preview-heading"><div><p class="dashboard-eyebrow">FILE PREVIEW</p><h2>@_selected.FileName</h2><p>@FormatSize(_selected.SizeBytes) · @_selected.ContentType</p></div>
+                            @if (_selected.Status == "MarkedForDeletion")
+                            {
+                                <button class="setup-primary" @onclick="RestoreAsync" disabled="@_busy">Restore</button>
+                            }
+                            else if (_selected.Status == "Active")
+                            {
+                                <button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete</button>
+                            }
+                        </div>
                         <div class="files-preview-content">
                             @if (IsImage(_selected.ContentType)) { <img class="files-image-preview" src="@ContentUrl(_selected.Id)" alt="@_selected.FileName" /> }
                             else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
                             else if (IsAudio(_selected.ContentType)) { <audio class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)">Your browser does not support this audio format.</audio> }
-                            else if (IsVideo(_selected.ContentType)) {
-                                <video class="files-video-preview" controls preload="metadata" src="@ContentUrl(_selected.Id)"><track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /></video>
+                            else if (IsVideo(_selected.ContentType) || IsVideoExtension(_selected.FileName)) {
+                                <video class="files-video-preview" controls preload="metadata" playsinline>
+                                    <source src="@PreviewUrl(_selected)" type="@PreviewContentType(_selected)" />
+                                    @if (!string.IsNullOrEmpty(_subtitleUrl)) { <track kind="subtitles" src="@_subtitleUrl" srclang="en" label="Uploaded subtitles" default /> }
+                                    Your browser cannot play this video format or codec. Download the original file to view it in a compatible player.
+                                </video>
                                 <div class="subtitle-panel"><strong>Subtitles</strong><p>Choose a WebVTT (.vtt) subtitle file from this device for the current preview. It is not saved to the server.</p><label class="files-secondary subtitle-upload">Upload .vtt<InputFile OnChange="UploadSubtitleAsync" accept=".vtt,text/vtt" disabled="@_busy" /></label>@if (!string.IsNullOrEmpty(_subtitleMessage)){<p>@_subtitleMessage</p>}</div>
                             }
                             else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
                             else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
                         </div>
                         <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd></dl>
-                        <EditForm Model="_rename" OnValidSubmit="RenameAsync"><label for="rename-file">Display name</label><div class="rename-row"><InputText id="rename-file" @bind-Value="_rename.FileName" maxlength="255" /><button class="files-secondary" type="submit" disabled="@_busy">Save</button></div></EditForm>
+                        <button class="files-secondary" @onclick="OpenRename" disabled="@_busy">Edit display name</button>
                         <a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download original</a></div>
                     }
                 </section>
             </div>
         </main>
+        @if (_uploadOpen)
+        {
+            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseUpload">
+                <section class="cm-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title" @onclick:stopPropagation="true">
+                    <h2 id="upload-title">Upload file</h2>
+                    <p>Select a file to upload to ContentManagement. Maximum size: 100 MiB.</p>
+                    <InputFile OnChange="UploadAsync" disabled="@_busy" />
+                    @if (_pendingUpload is not null) { <p><strong>@_pendingUpload.Name</strong> · @FormatSize(_pendingUpload.Size)</p> }
+                    <div class="setup-actions">
+                        <button class="files-secondary" @onclick="CloseUpload" disabled="@_busy">Cancel</button>
+                        <button class="setup-primary" @onclick="UploadSelectedAsync" disabled="@(_busy || _pendingUpload is null)">Upload</button>
+                    </div>
+                </section>
+            </div>
+        }
+        @if (_renameOpen && _selected is not null)
+        {
+            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseRename">
+                <section class="cm-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rename-title" @onclick:stopPropagation="true">
+                    <h2 id="rename-title">Edit display name</h2>
+                    <EditForm Model="_rename" OnValidSubmit="RenameAsync">
+                        <label for="rename-file">Display name</label>
+                        <InputText id="rename-file" @bind-Value="_rename.FileName" maxlength="255" />
+                        <div class="setup-actions">
+                            <button class="files-secondary" type="button" @onclick="CloseRename" disabled="@_busy">Cancel</button>
+                            <button class="setup-primary" type="submit" disabled="@_busy">Save changes</button>
+                        </div>
+                    </EditForm>
+                </section>
+            </div>
+        }
+        @if (_confirmDelete && _selected is not null)
+        {
+            <div class="cm-modal-backdrop" role="presentation" @onclick="() => _confirmDelete = false">
+                <section class="cm-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="file-delete-title" @onclick:stopPropagation="true">
+                    <h2 id="file-delete-title">Mark file for deletion?</h2>
+                    <p><strong>@_selected.FileName</strong> will be marked for deletion and removed by the cleanup job after the grace period.</p>
+                    <div class="setup-actions">
+                        <button class="files-secondary" @onclick="() => _confirmDelete = false" disabled="@_busy">Cancel</button>
+                        <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Confirm delete</button>
+                    </div>
+                </section>
+            </div>
+        }
     </div>
 }
 
 @code {
     private bool _checkingSession = true, _signedIn, _loading, _busy;
+    private bool _uploadOpen, _renameOpen, _confirmDelete;
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _pendingUpload;
     private string _email = "", _message = "", _subtitleMessage = "", _search = "", _status = "";
     private string? _textPreview, _subtitleUrl;
     private int _page = 1, _pageSize = 25;
@@ -107,23 +166,49 @@ else
             catch(HttpRequestException) { _textPreview="Preview could not be loaded."; }
         }
     }
-    private async Task UploadAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
-        var file=args.File; if(file is null) return; _busy=true; _message="";
-        try {
-            using var content=new MultipartFormDataContent();
-            await using var stream=file.OpenReadStream(100*1024*1024);
-            var part=new StreamContent(stream);
-            part.Headers.ContentType=new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(file.ContentType)?"application/octet-stream":file.ContentType);
-            content.Add(part,"file",file.Name);
-            using var response=await Http.PostAsync("api/files",content);
-            if(response.IsSuccessStatusCode){_message="File uploaded.";_page=1;await LoadAsync();}
-            else _message=response.StatusCode==System.Net.HttpStatusCode.RequestEntityTooLarge?"File exceeds the upload limit.":"Upload failed. Check file size and server permissions.";
-        } catch(HttpRequestException){_message="Upload failed. Unable to connect to the server.";}
-          catch(IOException){_message="Upload failed. The file may exceed the browser upload limit.";}
-        finally{_busy=false;}
+    private Task UploadAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args)
+    {
+        _pendingUpload = args.File;
+        return Task.CompletedTask;
     }
+
+    private void OpenUpload() { _pendingUpload = null; _uploadOpen = true; }
+    private void CloseUpload() { if (_busy) return; _uploadOpen = false; _pendingUpload = null; }
+
+    private async Task UploadSelectedAsync()
+    {
+        var file = _pendingUpload;
+        if (file is null || _busy) return;
+        _busy = true;
+        _message = "";
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            await using var stream = file.OpenReadStream(100 * 1024 * 1024);
+            var part = new StreamContent(stream);
+            part.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(part, "file", file.Name);
+            using var response = await Http.PostAsync("api/files", content);
+            if (response.IsSuccessStatusCode)
+            {
+                _message = "File uploaded.";
+                _page = 1;
+                _uploadOpen = false;
+                _pendingUpload = null;
+                await LoadAsync();
+            }
+            else _message = response.StatusCode == System.Net.HttpStatusCode.RequestEntityTooLarge ? "File exceeds the upload limit." : "Upload failed. Check file size and server permissions.";
+        }
+        catch (HttpRequestException) { _message = "Upload failed. Unable to connect to the server."; }
+        catch (IOException) { _message = "Upload failed. The file may exceed the browser upload limit."; }
+        finally { _busy = false; }
+    }
+
+    private void OpenRename() { if (_selected is null) return; _rename.FileName = _selected.FileName; _renameOpen = true; }
+    private void CloseRename() { if (_busy) return; _renameOpen = false; }
+
     private async Task UploadSubtitleAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
-        if (_selected is null || !IsVideo(_selected.ContentType)) return;
+        if (_selected is null || !(IsVideo(_selected.ContentType) || IsVideoExtension(_selected.FileName))) return;
         var file=args.File;
         if (!file.Name.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase) ||
             (!string.IsNullOrWhiteSpace(file.ContentType) && file.ContentType != "text/vtt" && file.ContentType != "application/octet-stream")) {
@@ -147,24 +232,63 @@ else
     }
     private async Task RenameAsync() {
         if(_selected is null) return; _busy=true;
-        try { using var response=await Http.PatchAsJsonAsync($"api/files/{_selected.Id}",new { fileName=_rename.FileName, rowVersion=_selected.RowVersion }); if(response.IsSuccessStatusCode){_message="File name updated."; await LoadAsync();}else _message=response.StatusCode==System.Net.HttpStatusCode.Conflict?"This file changed. Refresh and retry.":"Unable to rename file."; }
+        try { using var response=await Http.PatchAsJsonAsync($"api/files/{_selected.Id}",new { fileName=_rename.FileName, rowVersion=_selected.RowVersion }); if(response.IsSuccessStatusCode){_message="File name updated.";_renameOpen=false; await LoadAsync();}else _message=response.StatusCode==System.Net.HttpStatusCode.Conflict?"This file changed. Refresh and retry.":"Unable to rename file."; }
         catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
     }
+    private async Task RestoreAsync()
+    {
+        if (_selected is null || _selected.Status != "MarkedForDeletion" || _busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsync($"api/files/{_selected.Id}/restore", content: null);
+            if (response.IsSuccessStatusCode)
+            {
+                _message = "File restored.";
+                await LoadAsync();
+            }
+            else
+            {
+                _message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "This file can no longer be restored. Refresh the list."
+                    : "Unable to restore file.";
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server."; }
+        finally { _busy = false; }
+    }
+
     private async Task DeleteAsync() {
-        if(_selected is null || !await ConfirmDeleteAsync()) return; _busy=true;
-        try { using var response=await Http.DeleteAsync($"api/files/{_selected.Id}"); if(response.IsSuccessStatusCode){_message="File marked for deletion.";_selected=null;await LoadAsync();}else _message="Unable to delete file."; }
+        if(_selected is null || !_confirmDelete) return; _busy=true;
+        try { using var response=await Http.DeleteAsync($"api/files/{_selected.Id}"); if(response.IsSuccessStatusCode){_message="File marked for deletion.";_selected=null;_confirmDelete=false;await LoadAsync();}else _message="Unable to delete file."; }
         catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
     }
-    private async Task<bool> ConfirmDeleteAsync() => await JS.InvokeAsync<bool>("confirm", new object?[] { "Mark this file for deletion? It will be removed by the cleanup job after the grace period." });
     private async Task SearchKeyDown(KeyboardEventArgs e) { if(e.Key=="Enter"){_page=1;await LoadAsync();} }
     private async Task PreviousAsync(){if(_page>1){_page--;await LoadAsync();}}
     private async Task NextAsync(){if(_page*_pageSize<_total){_page++;await LoadAsync();}}
     private string ContentUrl(Guid id)=>$"api/files/{id}/content";
     private string DownloadUrl(Guid id)=>$"api/files/{id}/download";
+    private string PreviewUrl(FileItem file)=>IsWmv(file.FileName) ? $"api/files/{file.Id}/preview" : ContentUrl(file.Id);
     private static bool IsImage(string t)=>t.StartsWith("image/",StringComparison.OrdinalIgnoreCase)&&!t.Equals("image/svg+xml",StringComparison.OrdinalIgnoreCase);
     private static bool IsPdf(string t)=>t.Equals("application/pdf",StringComparison.OrdinalIgnoreCase);
     private static bool IsVideo(string t)=>t.StartsWith("video/",StringComparison.OrdinalIgnoreCase);
+    private static bool IsWmv(string fileName)=>Path.GetExtension(fileName).Equals(".wmv",StringComparison.OrdinalIgnoreCase); 
+    private static string PreviewContentType(FileItem file) =>
+        IsWmv(file.FileName) ? "video/mp4" :
+        file.ContentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) ||
+        string.IsNullOrWhiteSpace(file.ContentType)
+            ? Path.GetExtension(file.FileName).ToLowerInvariant() switch
+            {
+                ".mp4" or ".m4v" => "video/mp4",
+                ".webm" => "video/webm",
+                ".ogv" or ".ogg" => "video/ogg",
+                ".mov" => "video/quicktime",
+                _ => file.ContentType
+            }
+            : file.ContentType;
     private static bool IsAudio(string t)=>t.StartsWith("audio/",StringComparison.OrdinalIgnoreCase);
+    private static bool IsVideoExtension(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() is ".mp4" or ".m4v" or ".webm" or ".ogv" or ".ogg" or ".mov" or ".wmv";
     private static bool IsText(string t)=>t.StartsWith("text/",StringComparison.OrdinalIgnoreCase)||t is "application/json" or "application/xml" or "application/javascript";
     private static string IconFor(string t)=>t.StartsWith("image/")?"IMG":t=="application/pdf"?"PDF":t.StartsWith("video/")?"VID":t.StartsWith("audio/")?"AUD":t.StartsWith("text/")||t=="application/json"?"TXT":"FILE";
     private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
