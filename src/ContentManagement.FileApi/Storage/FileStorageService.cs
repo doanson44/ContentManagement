@@ -5,7 +5,8 @@ using ContentManagement.FileApi.Configuration;
 
 namespace ContentManagement.FileApi.Storage;
 
-public sealed record StoredFileInfo(string FilePath, long SizeBytes, string Sha256);\npublic sealed record StoredFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
+public sealed record StoredFileInfo(string FilePath, long SizeBytes, string Sha256);
+public sealed record StoredFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
 
 public sealed class FileSizeLimitExceededException(long maximumBytes)
     : Exception($"File exceeds the configured upload limit of {maximumBytes} bytes.")
