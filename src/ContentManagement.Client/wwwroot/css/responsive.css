@@ -491,3 +491,50 @@ a.files-upload-button,
         transition-duration: .01ms !important;
     }
 }
+
+
+/* Component-local Quick Notes styles are emitted in the page body; use scoped
+   selectors here so responsive rules take precedence without !important. */
+.content:has(.quick-notes-page) {
+    width: min(calc(100% - 2rem), var(--cm-content-max));
+    margin: 1.5rem auto;
+}
+
+.quick-notes-page .quick-notes-layout {
+    grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
+}
+
+.quick-notes-page .quick-notes-sidebar,
+.quick-notes-page .quick-notes-editor {
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .content:has(.quick-notes-page) {
+        width: calc(100% - 1rem);
+        margin: .5rem auto;
+    }
+
+    .quick-notes-page {
+        padding: 1rem;
+    }
+
+    .quick-notes-page .quick-notes-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .quick-notes-page .quick-notes-sidebar {
+        border-right: 0;
+        border-bottom: 1px solid #334155;
+    }
+
+    .quick-notes-page .quick-notes-list {
+        max-height: 15rem;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .quick-notes-page .quick-notes-header {
+        align-items: stretch;
+    }
+}
