@@ -15,25 +15,27 @@ public sealed class FilesController(
 {
     /// <summary>Uploads a binary file to the configured storage root using a relative filePath.</summary>
     [HttpPut]
-    [Consumes("application/octet-stream", "application/pdf", "image/*", "text/plain", "video/*", "audio/*")]
+    [Consumes("multipart/form-data")]
     [ProducesResponseType<StoredFileInfo>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
     public async Task<ActionResult<StoredFileInfo>> Upload(
         [FromQuery] string filePath,
+        IFormFile? file,
         CancellationToken cancellationToken)
     {
-        if (Request.ContentLength is <= 0)
-            return BadRequest(new { message = "A non-empty request body is required." });
+        if (file is null || file.Length <= 0)
+            return BadRequest(new { message = "A non-empty file is required." });
 
-        if (Request.ContentLength > options.Value.MaxUploadBytes)
+        if (file.Length > options.Value.MaxUploadBytes)
             return StatusCode(StatusCodes.Status413PayloadTooLarge,
                 new { message = "File exceeds the configured upload limit." });
 
         try
         {
-            var result = await storage.SaveAsync(filePath, Request.Body, cancellationToken);
+            await using var source = file.OpenReadStream();
+            var result = await storage.SaveAsync(filePath, source, cancellationToken);
             return Created($"/api/files/download?filePath={Uri.EscapeDataString(filePath)}", result);
         }
         catch (FileSizeLimitExceededException exception)
@@ -93,7 +95,6 @@ public sealed class FilesController(
 
             Response.Headers["X-Content-Type-Options"] = "nosniff";
             Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(Path.GetFileName(fullPath))}";
-            Response.Headers["Content-Security-Policy"] = "sandbox";
             return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
         }
         catch (FileNotFoundException)
