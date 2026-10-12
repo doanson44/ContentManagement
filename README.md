@@ -239,22 +239,16 @@ Quick Notes is an administrator-only personal note area available at `/dashboard
 
 Quick Notes currently supports the application's configured administrator session, not multiple independent user accounts. Content is plain text; rich text, attachments, sharing, reminders, and note version history are not implemented.
 
+### External File API storage
 
-## Responsive layout
+The administrator can configure the standalone ContentManagement.FileApi under /dashboard/setup:
 
-The client loads `wwwroot/css/responsive.css` after the base `app.css` stylesheet. The responsive layer refines the shared content width, dashboard navigation wrapping, file list/preview layout, table overflow, setup forms, modal viewport constraints, and Quick Notes layout without adding an application project or changing Blazor WebAssembly CSR.
+- Set the HTTPS base URL, API key, quota in GiB, and Prefer External API toggle.
+- The API key is protected with ASP.NET Core Data Protection before it is persisted; the setup endpoint never returns the secret.
+- When preference is enabled and the file fits within the remaining configured quota, the main server streams the file to PUT /api/files?filePath=... using the X-API-Key header, then stores the file metadata in SQL Server with UploadSource = ExternalServer.
+- Quota usage is calculated from non-deleted Files metadata records with UploadSource = ExternalServer; remaining capacity is max(0, quota - used). No capacity synchronization with the standalone API is performed.
+- If the file would exceed the configured quota, it is stored on the main server's local filesystem. If the External API is selected and an external upload fails, the request fails instead of silently falling back to local storage.
+- Downloads, inline content reads, and stale-file cleanup use the storage source recorded for each file. External URL changes are rejected while external file records exist, because the metadata currently stores the relative key rather than a per-file endpoint.
+- The main application serializes External quota checks/uploads within its single process. This assumes the documented single-server deployment; multi-instance deployments require a distributed quota reservation mechanism.
 
-Responsive behavior is designed around content width rather than device detection:
-
-- Wide desktop: dashboard navigation and file preview can use multi-column layouts.
-- Tablet and compact desktop: file workspace stacks when side-by-side panels become constrained; dashboard navigation wraps.
-- Mobile: content and forms use a single column, toolbar controls wrap, file/JSON/API-client tables become labeled record cards, modals respect the dynamic viewport, and Quick Notes places the list above the editor.
-- Reduced-motion preferences are respected by limiting animations and transitions.
-
-### Responsive verification checklist
-
-Before release, verify the application in browser device emulation and at least one real touch device. Suggested viewport widths: 320, 375, 390, 430, 768, 820, 1024, 1280, and 1440 CSS pixels.
-
-Check dashboard navigation, file search/upload/list/preview, JSON cards and row actions, API-client cards, setup forms, CRUD modals, Quick Notes list/editor/save actions, keyboard focus, and page-level horizontal overflow. On mobile, verify every table value has a visible field label and action buttons remain usable; desktop tables retain their tabular layout.
-
-This checklist documents the intended verification procedure; it is not a claim that every viewport or real device has already been tested.
+The External API must be deployed separately, configured with the same static API key that is entered in the main application's setup page, and reachable from the main server. The external API's /health endpoint is anonymous; file operations require X-API-Key.
