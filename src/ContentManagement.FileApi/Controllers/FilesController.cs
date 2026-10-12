@@ -13,6 +13,11 @@ public sealed class FilesController(
     FileStorageService storage,
     IOptions<FileApiOptions> options) : ControllerBase
 {
+    /// <summary>Authenticated health probe for server-to-server checks.</summary>
+    [HttpGet("health")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult AuthenticatedHealth() => Ok(new { status = "Healthy" });
+
     /// <summary>Uploads a binary file to the configured storage root using a relative filePath.</summary>
     [HttpPut]
     [Consumes("multipart/form-data")]
