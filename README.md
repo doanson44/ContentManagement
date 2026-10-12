@@ -11,7 +11,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
 - Lifecycle status enum and SQL row-version concurrency tokens.
 - All EF Core enum properties are stored in SQL Server as their symbolic string names; the `EnumValuesAsStrings` migration converts existing numeric file/document statuses.
-- API-key authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. All endpoints require authentication by default; health is explicitly anonymous.
+- Managed API-client authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. Browser administrators use the admin session cookie. All endpoints require authentication by default; health and signed file-view URLs are explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
@@ -49,15 +49,15 @@ $env:Authentication__Scopes__1 = "files.write"
 $env:Authentication__Scopes__2 = "json.read"
 ```
 
-Use a secret manager or protected environment variables in production; never embed this secret in Blazor WebAssembly configuration, JavaScript, appsettings committed to source control, or logs. The server fails at startup if no API key is configured. Send it on server-to-server calls as `X-Content-Management-Key`.
+Use a secret manager or protected environment variables in production; never embed client credentials in Blazor WebAssembly configuration, JavaScript, appsettings committed to source control, or logs. Create managed API clients from `/dashboard/api-clients` and send each client's key on server-to-server calls as `X-Content-Management-Key`. There is no global static API key requirement.
 
 Supported scopes are `files.read`, `files.write`, `files.delete`, `json.read`, `json.write`, and `json.delete`. Grant only required scopes. Apply a policy such as `[Authorize(Policy = ScopePolicies.FilesRead)]` on each corresponding controller action. The fallback authorization policy requires authentication for all endpoints unless explicitly marked `[AllowAnonymous]`.
 
-The static key remains available for backward compatibility. Managed API clients can be created from /dashboard/api-clients; each receives a server-generated client ID and high-entropy secret. The database stores only the SHA-256 hash of the secret. The full key is shown only on creation or rotation and is sent in the X-Content-Management-Key header in the form cm_<client-id>.<secret>. Each managed client has its own file/JSON scopes. Disabled or deleted clients are rejected on subsequent requests. The browser administrator session is separate from API client credentials. This feature uses managed opaque API keys, not OAuth 2.0 Client Credentials; OAuth token issuance remains a future enhancement.
+Managed API clients can be created from /dashboard/api-clients; each receives a server-generated client ID and high-entropy secret. The database stores only the SHA-256 hash of the secret. The full key is shown only on creation or rotation and is sent in the X-Content-Management-Key header in the form cm_<client-id>.<secret>. Each managed client has its own file/JSON scopes. Disabled or deleted clients are rejected on subsequent requests. The browser administrator session is separate from API client credentials. This feature uses managed opaque API keys, not OAuth 2.0 Client Credentials; OAuth token issuance remains a future enhancement.
 
 ## Administrator email OTP login
 
-The browser admin login uses email OTP and a server-issued cookie; it is separate from the static API-key mechanism used for server-to-server integrations. Configure exactly one administrator email in `AdminAuth:AllowedEmails`. Opening `/` redirects to `/otp`; if there is no active session, the client automatically requests an OTP to that configured mailbox, then asks only for the six-digit code. The client does not ask the administrator to enter an email address. There is no login form, public registration, invitation flow, or managed-user login.
+The browser admin login uses email OTP and a server-issued cookie; it is separate from managed API-client credentials used for server-to-server integrations. Configure exactly one administrator email in `AdminAuth:AllowedEmails`. Opening `/` redirects to `/otp`; if there is no active session, the client automatically requests an OTP to that configured mailbox, then asks only for the six-digit code. The client does not ask the administrator to enter an email address. There is no login form, public registration, invitation flow, or managed-user login.
 
 Configure an explicit allowlist and a random HMAC key (at least 32 characters) through protected environment variables or a secret manager. Configure SMTP with the credentials for your email provider. Do not commit these values:
 
@@ -76,7 +76,7 @@ $env:Smtp__FromEmail = "noreply@your-domain.example"
 $env:Authentication__ApiKey = "<server-to-server-api-key>"
 ```
 
-The OTP challenge is persisted in SQL Server. OTPs expire, are single-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. OTP issuance always targets the single email in `AdminAuth:AllowedEmails`, and OTP verification binds the code to that same server-configured address; the browser cannot choose an account. Unsafe requests without the API-key header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
+The OTP challenge is persisted in SQL Server. OTPs expire, are single-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. OTP issuance always targets the single email in `AdminAuth:AllowedEmails`, and OTP verification binds the code to that same server-configured address; the browser cannot choose an account. Unsafe requests without the managed API-client header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
 
 The server applies pending ContentManagement database migrations automatically during startup before accepting requests. Back up the database before deploying a version that introduces schema changes, and review migration files before deployment. The application identity must have permission to apply schema changes; if migrations fail, startup fails and the exception is logged server-side.
 
@@ -114,7 +114,7 @@ In the Development environment, the server exposes the interactive Swagger UI at
 
 ## Run the application
 
-Set `Authentication__ApiKey` and then run:
+Create a managed API client in the administrator dashboard only if a server-to-server integration needs API access, then run:
 
 ```bash
 dotnet run --project src/ContentManagement.Server/ContentManagement.Server.csproj
@@ -153,11 +153,11 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 ## Data and storage notes
 
 - Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server.
-- File API responses expose `filePath` as a storage-relative key, never an absolute filesystem path. Upload and metadata responses include `viewUrl`, a signed 15-minute URL for inline viewing. Anyone possessing the URL can view that one active file until expiry; treat it as a secret. Signed URLs are invalidated if the configured static API key changes. Use HTTPS before sharing them. Set `ContentManagement:PublicBaseUrl` to the externally reachable HTTPS origin when consumers need absolute view URLs. For example, set `ContentManagement__PublicBaseUrl=https://content.example.com` in the server environment. Without this setting, `viewUrl` is a relative path that clients can resolve against the server origin.
+- File API responses expose `filePath` as a storage-relative key, never an absolute filesystem path. Upload and metadata responses include `viewUrl`, a signed 15-minute URL for inline viewing. Anyone possessing the URL can view that one active file until expiry; treat it as a secret. File-view signing uses the independent `ContentManagement:FileViewSigningKey` setting and does not depend on managed API-client credentials. Configure a stable random signing key of at least 32 characters in production; if omitted, the server generates a process-local key and logs a warning, so existing view URLs become invalid after a server restart. Use HTTPS before sharing them. Set `ContentManagement:PublicBaseUrl` to the externally reachable HTTPS origin when consumers need absolute view URLs. For example, set `ContentManagement__PublicBaseUrl=https://content.example.com` in the server environment. Without this setting, `viewUrl` is a relative path that clients can resolve against the server origin.
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
-- File endpoints require `files.read`, `files.write`, or `files.delete` scopes for API-key callers; the signed-in administrator cookie is allowed for the browser file-management UI. The current static API-key mode is shared across clients and does not provide per-resource ownership isolation. Add per-client identities, ownership policy, rate limiting, and audit logging before exposing the APIs to untrusted external clients.
+- File endpoints require `files.read`, `files.write`, or `files.delete` scopes for managed API-client callers; the signed-in administrator cookie is allowed for the browser file-management UI. Add per-client identities, ownership policy, rate limiting, and audit logging before exposing the APIs to untrusted external clients.
 - The inline content endpoint enables HTTP Range responses for browser media playback. Browser codec support varies. HTML and SVG are served as `application/octet-stream` to avoid active content executing in the application origin.
 - Text preview is limited to files up to 256 KiB in the UI. Uploaded WebVTT subtitles are currently loaded locally into the browser for the active preview only; they are not persisted or associated with the video on the server. Persistent subtitle management is not yet implemented.
 
@@ -202,7 +202,7 @@ Administrators can use /dashboard/api-clients to create, list, edit, disable, ro
 
 A new client receives an API key in the form cm_<client-id>.<secret>. Store the complete key in the consuming application's server-side secret store; it cannot be retrieved from ContentManagement after the create/rotate response. The database stores a SHA-256 hash of the randomly generated 256-bit secret, not the plaintext secret. Rotating the secret invalidates the previous key immediately. Disabling or deleting a client also prevents future authentication.
 
-Managed API clients are authenticated through the existing X-Content-Management-Key header. The configured static API key remains supported for backward compatibility and continues to use its configured scope set. Managed API client scopes are enforced by the same file and JSON authorization policies. Client management endpoints require the administrator cookie and are not available to API-key callers.
+Managed API clients are authenticated through the existing X-Content-Management-Key header. Managed API client scopes are enforced by the same file and JSON authorization policies; no global static API key is required. Client management endpoints require the administrator cookie and are not available to API-key callers.
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
 
