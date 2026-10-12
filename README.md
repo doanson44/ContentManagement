@@ -233,6 +233,12 @@ Managed API clients are authenticated through the existing X-Content-Management-
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
 
+## DB2 health check
+
+The File API readiness endpoint `GET /health` checks connectivity to the configured DB2 database by opening a connection and running `SELECT 1 FROM SYSIBM.SYSDUMMY1`. The check has an 8-second health-check timeout and reports unhealthy if the connection string is missing, the database cannot be reached, authentication fails, or the probe query fails. It does not read or modify application data.
+
+Configure `ConnectionStrings:Db2` in `src/ContentManagement.FileApi/appsettings.json` for local development. For production, prefer overriding it with the `ConnectionStrings__Db2` environment variable or a secret provider so credentials are not committed to source control. The connection string must match the DB2 server type and installed IBM Data Server Driver requirements.
+
 ## Quick Notes
 
 Quick Notes is an administrator-only personal note area available at `/dashboard/quick-notes`. It stores plain-text titles and content in SQL Server, independently of file and JSON content. The dashboard includes a Quick Notes entry for the signed-in administrator.
