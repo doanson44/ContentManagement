@@ -52,11 +52,11 @@ public sealed class ExternalFileApiHealthCheck(
                     $"External File API health endpoint returned HTTP {(int)response.StatusCode}.");
             }
 
-            // Also validate that the configured API key can authenticate against a protected endpoint.
+            // A deliberately nonexistent path verifies the protected endpoint and API key
+            // without enumerating storage or downloading a real binary.
             var key = _protector.Unprotect(settings.ExternalStorageApiKeyProtected);
             using var authRequest = new HttpRequestMessage(HttpMethod.Get,
-                new Uri(baseUri.ToString().TrimEnd('/') + "/api/files/inventory?olderThanUtc=" +
-                    Uri.EscapeDataString(DateTime.UtcNow.AddDays(-36500).ToString("O"))));
+                new Uri(baseUri.ToString().TrimEnd('/') + "/api/files/download?filePath=__health_check_probe__.bin"));
             authRequest.Headers.Add("X-API-Key", key);
 
             using var authResponse = await client.SendAsync(
@@ -65,7 +65,7 @@ public sealed class ExternalFileApiHealthCheck(
             if (authResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 return HealthCheckResult.Unhealthy("External File API is reachable, but API key authentication failed.");
 
-            if (!authResponse.IsSuccessStatusCode)
+            if (authResponse.StatusCode != HttpStatusCode.NotFound && !authResponse.IsSuccessStatusCode)
                 return HealthCheckResult.Unhealthy(
                     $"External File API authenticated check returned HTTP {(int)authResponse.StatusCode}.");
 
