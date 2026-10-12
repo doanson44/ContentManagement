@@ -11,8 +11,6 @@ public sealed class StaleFileCleanupJob(
     IFileStorage fileStorage,
     ILogger<StaleFileCleanupJob> logger)
 {
-    private sealed record StaleFile(Guid Id, string StorageKey);
-
     [DisableConcurrentExecution(timeoutInSeconds: 300)]
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
@@ -22,49 +20,56 @@ public sealed class StaleFileCleanupJob(
             return;
 
         var deletionBefore = now.AddDays(-settings.StaleFileAgeDays);
-        var readyForDeletion = await db.Files
+        var eligibleIds = await db.Files
             .AsNoTracking()
             .Where(file =>
                 file.Status == ContentStatus.MarkedForDeletion &&
                 file.UpdatedUtc <= deletionBefore)
             .OrderBy(file => file.UpdatedUtc)
             .Take(100)
-            .Select(file => new StaleFile(file.Id, file.StorageKey))
+            .Select(file => file.Id)
             .ToListAsync(cancellationToken);
 
         var deletedCount = 0;
-        foreach (var file in readyForDeletion)
+        foreach (var fileId in eligibleIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                // Delete the binary first. Only remove the SQL record after the storage
-                // deletion succeeds, so a failed file delete cannot orphan metadata.
+                // Lock the SQL row while deleting the binary and metadata. This prevents
+                // Restore from reactivating a file after its binary has been removed.
+                await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+                var file = await db.Files
+                    .FromSqlInterpolated($"SELECT * FROM [Files] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {fileId}")
+                    .SingleOrDefaultAsync(cancellationToken);
+
+                if (file is null ||
+                    file.Status != ContentStatus.MarkedForDeletion ||
+                    file.UpdatedUtc > deletionBefore)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    continue;
+                }
+
+                // File deletion is idempotent: if the process fails before SQL commits,
+                // the next run can safely retry even when the binary is already absent.
                 await fileStorage.DeleteAsync(file.StorageKey, cancellationToken);
-
-                var affectedRows = await db.Files
-                    .Where(current => current.Id == file.Id &&
-                        current.Status == ContentStatus.MarkedForDeletion &&
-                        current.UpdatedUtc <= deletionBefore)
-                    .ExecuteDeleteAsync(cancellationToken);
-
-                if (affectedRows == 1)
-                    deletedCount++;
-                else
-                    logger.LogInformation(
-                        "Skipped metadata deletion for stale file {FileId} because its state changed during cleanup.",
-                        file.Id);
+                db.Files.Remove(file);
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                deletedCount++;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 logger.LogError(exception,
                     "Failed to hard-delete stale file {FileId}; cleanup will retry on the next scheduled run.",
-                    file.Id);
+                    fileId);
+                db.ChangeTracker.Clear();
             }
         }
 
-        if (readyForDeletion.Count > 0)
+        if (eligibleIds.Count > 0)
             logger.LogInformation("Stale file cleanup hard-deleted {DeletedCount} of {EligibleCount} eligible marked files.",
-                deletedCount, readyForDeletion.Count);
+                deletedCount, eligibleIds.Count);
     }
 }
