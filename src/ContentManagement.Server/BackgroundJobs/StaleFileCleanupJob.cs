@@ -19,7 +19,6 @@ public sealed class StaleFileCleanupJob(
         if (settings is null)
             return;
 
-        settings.LastCleanupUtc = now;
         var deletionBefore = now.AddDays(-settings.StaleFileAgeDays);
         var readyForDeletion = await db.Files
             .Where(file =>
@@ -28,8 +27,6 @@ public sealed class StaleFileCleanupJob(
             .OrderBy(file => file.UpdatedUtc)
             .Take(100)
             .ToListAsync(cancellationToken);
-
-        await db.SaveChangesAsync(cancellationToken);
 
         var deletedCount = 0;
         foreach (var file in readyForDeletion)
