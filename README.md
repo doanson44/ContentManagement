@@ -213,3 +213,23 @@ Quick Notes is an administrator-only personal note area available at `/dashboard
 - Migration `202610120001_AddQuickNotes` creates the notes table and its ordering index. The server applies pending EF Core migrations at startup, so back up the database and review the migration before deployment.
 
 Quick Notes currently supports the application's configured administrator session, not multiple independent user accounts. Content is plain text; rich text, attachments, sharing, reminders, and note version history are not implemented.
+
+
+## Responsive layout
+
+The client loads `wwwroot/css/responsive.css` after the base `app.css` stylesheet. The responsive layer refines the shared content width, dashboard navigation wrapping, file list/preview layout, table overflow, setup forms, modal viewport constraints, and Quick Notes layout without adding an application project or changing Blazor WebAssembly CSR.
+
+Responsive behavior is designed around content width rather than device detection:
+
+- Wide desktop: dashboard navigation and file preview can use multi-column layouts.
+- Tablet and compact desktop: file workspace stacks when side-by-side panels become constrained; dashboard navigation wraps.
+- Mobile: content and forms use a single column, toolbar controls wrap, tables retain a bounded horizontal-scroll region, modals respect the dynamic viewport, and Quick Notes places the list above the editor.
+- Reduced-motion preferences are respected by limiting animations and transitions.
+
+### Responsive verification checklist
+
+Before release, verify the application in browser device emulation and at least one real touch device. Suggested viewport widths: 320, 375, 390, 430, 768, 820, 1024, 1280, and 1440 CSS pixels.
+
+Check dashboard navigation, file search/upload/list/preview, JSON tables and row actions, API client tables, setup forms, CRUD modals, Quick Notes list/editor/save actions, keyboard focus, and page-level horizontal overflow. A table may scroll horizontally inside its own region where preserving all columns is necessary; the entire page should not gain unintended horizontal scrolling.
+
+This checklist documents the intended verification procedure; it is not a claim that every viewport or real device has already been tested.
