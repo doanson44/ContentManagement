@@ -88,3 +88,19 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .json-page .json-row-actions{display:flex;justify-content:flex-end;gap:.5rem;white-space:nowrap}
 .json-page .json-row-actions .files-secondary,.json-page .json-row-actions .files-danger{min-width:64px}
 @media(max-width:760px){.json-page .files-table-wrap{overflow-x:auto}.json-page .files-table{min-width:760px}}
+
+
+/* JSON documents use the full workspace width, with row-level CRUD actions. */
+.json-page .files-workspace{display:block;width:100%}
+.json-page .files-list-panel{width:100%;max-width:none}
+.json-page .files-toolbar{width:100%}
+.json-page .files-toolbar input{min-width:0}
+.json-page .files-table{width:100%;table-layout:auto}
+.json-page .files-table th:first-child,.json-page .files-table td:first-child{width:45%}
+.json-page .files-table th:nth-child(2),.json-page .files-table td:nth-child(2),
+.json-page .files-table th:nth-child(3),.json-page .files-table td:nth-child(3),
+.json-page .files-table th:nth-child(4),.json-page .files-table td:nth-child(4){white-space:nowrap}
+.json-page .json-actions-heading{text-align:right}
+.json-page .json-row-actions{display:flex;justify-content:flex-end;gap:.5rem;white-space:nowrap}
+.json-page .json-row-actions .files-secondary,.json-page .json-row-actions .files-danger{min-width:64px}
+@media(max-width:760px){.json-page .files-table-wrap{overflow-x:auto}.json-page .files-table{min-width:760px}}
