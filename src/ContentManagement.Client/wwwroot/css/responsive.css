@@ -770,3 +770,68 @@ a.files-upload-button,
         border-color: #74333a;
     }
 }
+
+
+/* Audit surfaces and controls that still use the original light palette. */
+.setup-form-grid input:not([type=checkbox]),
+.user-edit-row select,
+.files-toolbar input,
+.files-toolbar select,
+.rename-row input,
+.json-editor input,
+.json-editor textarea,
+.login-card input {
+    background: var(--cm-bg);
+    color: var(--cm-text);
+    border-color: var(--cm-border-strong);
+    color-scheme: dark;
+}
+
+.files-preview-content,
+.files-preview-content iframe,
+.files-preview-content .files-pdf-preview,
+.files-preview-content .files-text-preview {
+    background: var(--cm-bg);
+}
+
+.files-metadata,
+.subtitle-panel,
+.api-key-value {
+    background: var(--cm-surface);
+    color: var(--cm-text);
+}
+
+.files-metadata dd,
+.files-metadata label,
+.files-text-preview {
+    color: var(--cm-text);
+}
+
+.setup-notice.success,
+.files-message.success {
+    background: #123326;
+    border-color: #245c42;
+    color: var(--cm-success);
+}
+
+.setup-notice.error,
+.files-message.error {
+    background: #3b1c20;
+    border-color: #74333a;
+    color: var(--cm-danger);
+}
+
+.setup-hint {
+    color: var(--cm-success);
+}
+
+@media (max-width: 640px) {
+    .files-table tbody tr.selected {
+        background: #202d45;
+    }
+
+    .files-table tbody td,
+    .users-table tbody td {
+        background: transparent;
+    }
+}
