@@ -187,6 +187,12 @@ else
             SetMessage("File age threshold must be between 1 and 3650 days.", true);
             return;
         }
+        if (!double.IsFinite(_model.ExternalStorageQuotaGb) ||
+            _model.ExternalStorageQuotaGb < 0 || _model.ExternalStorageQuotaGb > 1_000_000)
+        {
+            SetMessage("External quota must be between 0 and 1,000,000 GB.", true);
+            return;
+        }
 
         _busy = true;
         _message = "";
