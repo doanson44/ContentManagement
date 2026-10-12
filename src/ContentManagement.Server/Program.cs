@@ -57,6 +57,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
     .ValidateDataAnnotations()
+    .Validate(options => string.IsNullOrWhiteSpace(options.PublicBaseUrl) ||
+        (Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var publicBaseUrl) && publicBaseUrl.Scheme == Uri.UriSchemeHttps),
+        "ContentManagement:PublicBaseUrl must be an absolute HTTPS URL when configured.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<AdminAuthOptions>()
