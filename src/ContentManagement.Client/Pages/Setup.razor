@@ -81,6 +81,7 @@ else
     private string _email = "";
     private string _message = "";
     private SetupModel _model = new();
+    private int _savedStaleFileAgeDays = 90;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,10 +117,20 @@ else
 
             var settings = await response.Content.ReadFromJsonAsync<SetupResponse>();
             if (settings is not null)
-                _model = new SetupModel { StaleFileAgeDays = settings.StaleFileAgeDays };
+            {
+                _savedStaleFileAgeDays = settings.StaleFileAgeDays;
+                _model = new SetupModel { StaleFileAgeDays = _savedStaleFileAgeDays };
+            }
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _loading = false; }
+    }
+
+    private void CloseEdit()
+    {
+        if (_busy) return;
+        _model.StaleFileAgeDays = _savedStaleFileAgeDays;
+        _editOpen = false;
     }
 
     private async Task SaveAsync()
@@ -143,6 +154,7 @@ else
                 return;
             }
 
+            _savedStaleFileAgeDays = _model.StaleFileAgeDays;
             SetMessage("Cleanup settings saved.", false);
             _editOpen = false;
         }
