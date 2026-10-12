@@ -34,7 +34,7 @@ else
             @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
             <div class="files-workspace">
                 <section class="files-list-panel">
-                    <div class="files-toolbar"><input aria-label="Search files" placeholder="Search by filename or SHA-256…" @bind="_search" @bind:event="oninput" @onkeydown="SearchKeyDown" /><select aria-label="Filter status" @bind="_status" @bind:after="LoadAsync"><option value="">All statuses</option><option>Active</option><option>MarkedForDeletion</option><option>Uploading</option></select><button class="files-secondary" @onclick="LoadAsync">Search</button></div>
+                    <div class="files-toolbar"><input aria-label="Search files" placeholder="Search by filename or SHA-256…" @bind="_search" @bind:event="oninput" @onkeydown="SearchKeyDown" /><select aria-label="Filter status" @bind="_status" @bind:after="LoadAsync"><option value="">All statuses</option><option>Active</option><option>MarkedForDeletion</option><option>Deleting</option><option>Uploading</option></select><button class="files-secondary" @onclick="LoadAsync">Search</button></div>
                     @if (_loading) { <p class="files-empty">Loading files…</p> }
                     else if (_items.Count == 0) { <p class="files-empty">No files found. Upload a file to get started.</p> }
                     else {
@@ -47,7 +47,16 @@ else
                 <section class="files-preview-panel">
                     @if (_selected is null) { <div class="files-preview-placeholder"><span>▤</span><h2>Select a file</h2><p>Preview and metadata will appear here.</p></div> }
                     else {
-                        <div class="files-preview-heading"><div><p class="dashboard-eyebrow">FILE PREVIEW</p><h2>@_selected.FileName</h2><p>@FormatSize(_selected.SizeBytes) · @_selected.ContentType</p></div><button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete</button></div>
+                        <div class="files-preview-heading"><div><p class="dashboard-eyebrow">FILE PREVIEW</p><h2>@_selected.FileName</h2><p>@FormatSize(_selected.SizeBytes) · @_selected.ContentType</p></div>
+                            @if (_selected.Status == "MarkedForDeletion")
+                            {
+                                <button class="setup-primary" @onclick="RestoreAsync" disabled="@_busy">Restore</button>
+                            }
+                            else if (_selected.Status == "Active")
+                            {
+                                <button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete</button>
+                            }
+                        </div>
                         <div class="files-preview-content">
                             @if (IsImage(_selected.ContentType)) { <img class="files-image-preview" src="@ContentUrl(_selected.Id)" alt="@_selected.FileName" /> }
                             else if (IsPdf(_selected.ContentType)) { <iframe class="files-pdf-preview" src="@ContentUrl(_selected.Id)" title="@_selected.FileName"></iframe> }
@@ -222,6 +231,29 @@ else
         try { using var response=await Http.PatchAsJsonAsync($"api/files/{_selected.Id}",new { fileName=_rename.FileName, rowVersion=_selected.RowVersion }); if(response.IsSuccessStatusCode){_message="File name updated.";_renameOpen=false; await LoadAsync();}else _message=response.StatusCode==System.Net.HttpStatusCode.Conflict?"This file changed. Refresh and retry.":"Unable to rename file."; }
         catch(HttpRequestException){_message="Unable to connect to the server.";} finally{_busy=false;}
     }
+    private async Task RestoreAsync()
+    {
+        if (_selected is null || _selected.Status != "MarkedForDeletion" || _busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsync($"api/files/{_selected.Id}/restore", content: null);
+            if (response.IsSuccessStatusCode)
+            {
+                _message = "File restored.";
+                await LoadAsync();
+            }
+            else
+            {
+                _message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "This file can no longer be restored. Refresh the list."
+                    : "Unable to restore file.";
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server."; }
+        finally { _busy = false; }
+    }
+
     private async Task DeleteAsync() {
         if(_selected is null || !_confirmDelete) return; _busy=true;
         try { using var response=await Http.DeleteAsync($"api/files/{_selected.Id}"); if(response.IsSuccessStatusCode){_message="File marked for deletion.";_selected=null;_confirmDelete=false;await LoadAsync();}else _message="Unable to delete file."; }
