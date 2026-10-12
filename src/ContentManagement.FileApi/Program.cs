@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddHealthChecks()
-    .AddCheck<Db2HealthCheck>("db2", timeout: TimeSpan.FromSeconds(8));
+    .AddCheck<MySqlHealthCheck>("mysql", timeout: TimeSpan.FromSeconds(8));
 builder.Services.AddProblemDetails();
 
 builder.Services.AddOptions<FileApiOptions>()
