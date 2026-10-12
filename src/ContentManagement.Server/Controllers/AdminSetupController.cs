@@ -42,9 +42,8 @@ public sealed class AdminSetupController(
         var endpoint = request.ExternalStorageBaseUrl?.Trim().TrimEnd('/') ?? "";
         if (!string.IsNullOrWhiteSpace(endpoint) &&
             (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
-             (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) ||
-             (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)))
-            return BadRequest(new { message = "External API URL must be an absolute HTTPS URL (HTTP is allowed only for localhost)." });
+             (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)))
+            return BadRequest(new { message = "External API URL must be an absolute HTTP or HTTPS URL." });
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
         var externalFileCount = await db.Files.AsNoTracking().LongCountAsync(
