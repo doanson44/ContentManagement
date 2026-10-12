@@ -43,10 +43,7 @@ For API creation, send an optional `code` field with `documentType` and `json`. 
 Configure a high-entropy secret outside source control, for example through an environment variable or secret manager:
 
 ```powershell
-$env:Authentication__ApiKey = "replace-with-a-long-random-secret"
-$env:Authentication__Scopes__0 = "files.read"
-$env:Authentication__Scopes__1 = "files.write"
-$env:Authentication__Scopes__2 = "json.read"
+# Create a managed API client from /dashboard/api-clients and store its key in the consuming server application.
 ```
 
 Use a secret manager or protected environment variables in production; never embed client credentials in Blazor WebAssembly configuration, JavaScript, appsettings committed to source control, or logs. Create managed API clients from `/dashboard/api-clients` and send each client's key on server-to-server calls as `X-Content-Management-Key`. There is no global static API key requirement.
@@ -73,14 +70,13 @@ $env:Smtp__UseSsl = "true"
 $env:Smtp__Username = "smtp-user"
 $env:Smtp__Password = "<smtp-password>"
 $env:Smtp__FromEmail = "noreply@your-domain.example"
-$env:Authentication__ApiKey = "<server-to-server-api-key>"
 ```
 
 The OTP challenge is persisted in SQL Server. OTPs expire, are single-use, are stored as keyed hashes, have a verification-attempt limit, and request/verification rate limits are partitioned by client IP. OTP issuance always targets the single email in `AdminAuth:AllowedEmails`, and OTP verification binds the code to that same server-configured address; the browser cannot choose an account. Unsafe requests without the managed API-client header must carry a same-origin `Origin` header or match an explicitly configured HTTPS origin in `AdminAuth:AllowedOrigins`; this is CSRF defense for cookie-authenticated operations. The API deliberately returns a generic message for eligible and ineligible email addresses. Admin sessions use an HttpOnly, Secure, SameSite=Strict cookie. HTTPS is required for the browser cookie. The SMTP sender must be configured before enabling any admin email in the allowlist.
 
 The server applies pending ContentManagement database migrations automatically during startup before accepting requests. Back up the database before deploying a version that introduces schema changes, and review migration files before deployment. The application identity must have permission to apply schema changes; if migrations fail, startup fails and the exception is logged server-side.
 
-The migrations include `202610090002_AddAdminOtpChallenges` and `202610090004_AddManagedUsers` (the latter is retained for database migration history; managed-user endpoints and sign-in have been removed). Configure the allowlist only for trusted administrators. The browser authentication surface provides administrator OTP sign-in and sign-out. A formal audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. API-key protected routes still require the relevant API-key scopes; the admin cookie does not grant those machine-to-machine scopes.
+The migrations include `202610090002_AddAdminOtpChallenges` and `202610090004_AddManagedUsers` (the latter is retained for database migration history; managed-user endpoints and sign-in have been removed). Configure the allowlist only for trusted administrators. The browser authentication surface provides administrator OTP sign-in and sign-out. A formal audit trail, email delivery observability, cross-instance distributed rate limiting, and synchronised OTP throttling across multiple server instances remain follow-up hardening tasks. The current origin check is a same-origin defense rather than a synchronizer-token implementation; keep browser and API on one origin where possible. Managed API-client routes require the relevant client scopes; the admin cookie does not grant those machine-to-machine scopes.
 
 ## Requirements
 
@@ -110,7 +106,7 @@ Use a local-only test password and do not commit credentials. CI uses a disposab
 
 ## Swagger / OpenAPI
 
-In the Development environment, the server exposes the interactive Swagger UI at `/swagger` and the OpenAPI JSON at `/swagger/v1/swagger.json`. Swagger is disabled outside Development by default to avoid publishing the API surface in production. The document describes both supported authentication alternatives for protected operations: the `X-Content-Management-Key` API-key header and the administrator session cookie. API-key calls still require the relevant file/JSON scope; never enter production secrets on an untrusted machine or embed keys in the Blazor WebAssembly client.
+In the Development environment, the server exposes the interactive Swagger UI at `/swagger` and the OpenAPI JSON at `/swagger/v1/swagger.json`. Swagger is disabled outside Development by default to avoid publishing the API surface in production. The document describes both supported authentication alternatives for protected operations: the `X-Content-Management-Key` header for managed API clients and the administrator session cookie. Client calls still require the relevant file/JSON scope; never enter production secrets on an untrusted machine or embed keys in the Blazor WebAssembly client.
 
 ## Run the application
 
@@ -202,7 +198,7 @@ Administrators can use /dashboard/api-clients to create, list, edit, disable, ro
 
 A new client receives an API key in the form cm_<client-id>.<secret>. Store the complete key in the consuming application's server-side secret store; it cannot be retrieved from ContentManagement after the create/rotate response. The database stores a SHA-256 hash of the randomly generated 256-bit secret, not the plaintext secret. Rotating the secret invalidates the previous key immediately. Disabling or deleting a client also prevents future authentication.
 
-Managed API clients are authenticated through the existing X-Content-Management-Key header. Managed API client scopes are enforced by the same file and JSON authorization policies; no global static API key is required. Client management endpoints require the administrator cookie and are not available to API-key callers.
+Managed API clients are authenticated through the existing X-Content-Management-Key header. Managed API client scopes are enforced by the same file and JSON authorization policies; no global static API key is required. Client management endpoints require the administrator cookie and are not available to managed API clients.
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
 
