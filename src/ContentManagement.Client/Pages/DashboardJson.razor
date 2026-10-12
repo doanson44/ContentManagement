@@ -16,7 +16,7 @@ else if (!_signedIn)
 }
 else
 {
-    <div class="dashboard-page files-page">
+    <div class="dashboard-page files-page json-page">
         <aside class="dashboard-sidebar">
             <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
             <p class="sidebar-label">WORKSPACE</p><a class="sidebar-link" href="/dashboard">⌂ Dashboard</a>
@@ -41,12 +41,16 @@ else
                     else if (_items.Count == 0) { <p class="files-empty">No JSON documents found.</p> }
                     else
                     {
-                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Code / document type</th><th>Size</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>Code / document type</th><th>Size</th><th>Status</th><th>Updated</th><th class="json-actions-heading">Actions</th></tr></thead><tbody>
                         @foreach (var item in _items)
                         {
                             <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id">
                                 <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.Code</strong><small>@item.DocumentType · @item.Id</small></span></button></td>
                                 <td>@FormatSize(item.UncompressedSizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td class="json-row-actions">
+                                    <button class="files-secondary" @onclick="() => SelectAsync(item)" disabled="@_busy">Edit</button>
+                                    <button class="files-danger" @onclick="() => ConfirmDelete(item)" disabled="@_busy">Delete</button>
+                                </td>
                             </tr>
                         }
                         </tbody></table></div>
@@ -183,6 +187,13 @@ else
         _message = "";
         _editorOpen = true;
         _confirmDelete = false;
+    }
+
+    private void ConfirmDelete(JsonItem item)
+    {
+        _selected = item;
+        _confirmDelete = true;
+        _message = "";
     }
 
     private void OpenNewDocument() => NewDocument();
