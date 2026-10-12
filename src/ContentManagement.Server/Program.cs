@@ -53,6 +53,8 @@ builder.Services.AddSwaggerGen(options =>
     options.OperationFilter<SwaggerAuthenticationOperationFilter>();
 });
 builder.Services.AddProblemDetails();
+builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddScoped<ExternalFileApiClient>();
 
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
