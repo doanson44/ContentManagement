@@ -62,22 +62,22 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         var code = $"upsert-{Guid.NewGuid():N}";
 
         using var create = await client.PutAsJsonAsync($"/api/json/by-code/{Uri.EscapeDataString(code)}",
-            new UpsertJsonDocumentRequest("upsert-test", "{\\"value\\":1}"));
+            new UpsertJsonDocumentRequest("upsert-test", "{\"value\":1}"));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.NotNull(created);
         Assert.Equal(code, created.Code);
-        Assert.Equal("{\\"value\\":1}", created.Json);
+        Assert.Equal("{\"value\":1}", created.Json);
 
         using var update = await client.PutAsJsonAsync($"/api/json/by-code/{Uri.EscapeDataString(code)}",
-            new UpsertJsonDocumentRequest("upsert-test-updated", "{\\"value\\":2}"));
+            new UpsertJsonDocumentRequest("upsert-test-updated", "{\"value\":2}"));
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         var updated = await update.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
         Assert.NotNull(updated);
         Assert.Equal(created.Id, updated.Id);
         Assert.Equal(code, updated.Code);
         Assert.Equal("upsert-test-updated", updated.DocumentType);
-        Assert.Equal("{\\"value\\":2}", updated.Json);
+        Assert.Equal("{\"value\":2}", updated.Json);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead]);
 
         using var response = await client.PutAsJsonAsync($"/api/json/by-code/upsert-scope-{Guid.NewGuid():N}",
-            new UpsertJsonDocumentRequest("scope-test", "{\\"ok\\":true}"));
+            new UpsertJsonDocumentRequest("scope-test", "{\"ok\":true}"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -98,7 +98,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         using var factory = CreateFactory();
         using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
         var code = $"lookup-{Guid.NewGuid():N}";
-        const string json = "{\\"source\\":\\"code-lookup\\",\\"enabled\\":true}";
+        const string json = "{\"source\":\"code-lookup\",\"enabled\":true}";
 
         using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-lookup-test", json));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
