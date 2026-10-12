@@ -81,7 +81,15 @@ public sealed class FileStorageService
             }
 
             EnsureSafeExistingDirectories(directory);
-            File.Move(temporaryPath, destinationPath);
+            try
+            {
+                File.Move(temporaryPath, destinationPath);
+            }
+            catch (IOException) when (File.Exists(destinationPath))
+            {
+                throw new FileAlreadyExistsException();
+            }
+
             return new StoredFileInfo(filePath, totalBytes, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
         }
         finally
@@ -145,7 +153,7 @@ public sealed class FileStorageService
         var normalized = filePath.Replace('\\', '/');
         if (normalized.StartsWith('/') ||
             Path.IsPathRooted(filePath) ||
-            normalized.Contains(':', StringComparison.Ordinal))
+            normalized.Contains(':'))
         {
             throw new InvalidDataException("filePath must be relative to the configured storage root.");
         }
