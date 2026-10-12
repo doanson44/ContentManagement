@@ -35,6 +35,10 @@ public sealed class AdminSetupController(
         if (request.ExternalStorageQuotaBytes < 0)
             return BadRequest(new { message = "External storage quota must be zero or greater." });
 
+        if (!string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) &&
+            (request.ExternalStorageApiKey.Trim().Length < 32 || request.ExternalStorageApiKey.Trim().Length > 1024))
+            return BadRequest(new { message = "External API key must contain between 32 and 1024 characters." });
+
         var endpoint = request.ExternalStorageBaseUrl?.Trim().TrimEnd('/') ?? "";
         if (!string.IsNullOrWhiteSpace(endpoint) &&
             (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
