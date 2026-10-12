@@ -100,8 +100,10 @@ public sealed class JsonDocumentsController(
     public async Task<ActionResult<JsonDocumentDetails>> UpsertByCode(
         string code, [FromBody] UpsertJsonDocumentRequest request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest(new { message = "Code is required." });
         var normalizedCode = NormalizeOrGenerateCode(code);
-        if (normalizedCode is null || !string.Equals(code, code.Trim(), StringComparison.Ordinal))
+        if (normalizedCode is null)
             return BadRequest(new { message = "Code must be 1-100 characters, start with a letter or number, and contain only letters, numbers, dots, underscores or hyphens." });
         if (string.IsNullOrWhiteSpace(request.DocumentType) || request.DocumentType.Trim().Length > 200)
             return BadRequest(new { message = "DocumentType is required and must not exceed 200 characters." });
