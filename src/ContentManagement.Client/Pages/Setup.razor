@@ -11,24 +11,7 @@
 }
 else if (_signedIn)
 {
-    <div class="dashboard-page">
-        <aside class="dashboard-sidebar">
-            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
-            <p class="sidebar-label">WORKSPACE</p>
-            <a class="sidebar-link" href="/dashboard"><span>⌂</span> Dashboard</a>
-            <p class="sidebar-label">MANAGEMENT</p>
-            <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
-            <div class="sidebar-link muted-link"><span>▤</span> Files <small>Planned</small></div>
-            <div class="sidebar-link muted-link"><span>{ }</span> JSON documents <small>Planned</small></div>
-            <p class="sidebar-label">SYSTEM</p>
-            <a class="sidebar-link active" href="/dashboard/setup"><span>⚙</span> Setup</a>
-            <div class="sidebar-bottom">
-                <div class="admin-avatar">A</div>
-                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
-                <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
-            </div>
-        </aside>
-
+    <div class="dashboard-page dashboard-page-no-sidebar">
         <main class="dashboard-main setup-main">
             <header class="dashboard-header">
                 <div>
@@ -36,7 +19,7 @@ else if (_signedIn)
                     <h1>Setup</h1>
                     <p class="dashboard-subtitle">Configure when stale files are marked for removal and permanently deleted.</p>
                 </div>
-                <div class="session-pill"><span></span> Admin session active</div>
+                <div class="session-pill"><span></span> Session active</div>
             </header>
 
             @if (!string.IsNullOrWhiteSpace(_message))
