@@ -126,6 +126,21 @@ public sealed class FileStorageService
         return fullPath;
     }
 
+    public bool Delete(string filePath)
+    {
+        var fullPath = ResolvePath(filePath);
+        EnsureSafeExistingDirectories(Path.GetDirectoryName(fullPath)!);
+        if (!File.Exists(fullPath))
+            return false;
+
+        var attributes = File.GetAttributes(fullPath);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("Symbolic links and reparse points are not allowed.");
+
+        File.Delete(fullPath);
+        return true;
+    }
+
     public string GetContentType(string filePath)
     {
         return ContentTypes.TryGetContentType(filePath, out var contentType)
