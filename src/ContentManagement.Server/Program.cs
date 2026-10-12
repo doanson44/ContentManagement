@@ -34,16 +34,6 @@ builder.Services.AddOptions<ContentManagementOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-builder.Services.AddOptions<ApiKeyOptions>()
-    .Bind(builder.Configuration.GetSection(ApiKeyOptions.SectionName))
-    .Validate(options => !string.IsNullOrWhiteSpace(options.ApiKey),
-        "Authentication:ApiKey must be configured using a secret provider.")
-    .Validate(options => options.Scopes.All(scope =>
-        scope is ScopePolicies.FilesRead or ScopePolicies.FilesWrite or ScopePolicies.FilesDelete or
-            ScopePolicies.JsonRead or ScopePolicies.JsonWrite or ScopePolicies.JsonDelete),
-        "Authentication:Scopes contains an unsupported scope.")
-    .ValidateOnStart();
-
 builder.Services.AddOptions<AdminAuthOptions>()
     .Bind(builder.Configuration.GetSection(AdminAuthOptions.SectionName))
     .Validate(options => options.OtpLifetimeMinutes is >= 3 and <= 30)

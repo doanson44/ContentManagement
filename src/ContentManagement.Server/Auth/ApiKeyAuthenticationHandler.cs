@@ -15,12 +15,9 @@ public sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> schemeOptions,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    IOptions<ApiKeyOptions> apiKeyOptions,
     ContentManagementDbContext db)
     : AuthenticationHandler<AuthenticationSchemeOptions>(schemeOptions, logger, encoder)
 {
-    private readonly ApiKeyOptions _apiKeyOptions = apiKeyOptions.Value;
-
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(ApiKeyAuthenticationDefaults.HeaderName, out StringValues suppliedValues))
@@ -30,12 +27,6 @@ public sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.Fail("Invalid API key.");
 
         var suppliedKey = suppliedValues[0]!;
-        if (!string.IsNullOrWhiteSpace(_apiKeyOptions.ApiKey) &&
-            FixedTimeEquals(suppliedKey, _apiKeyOptions.ApiKey))
-        {
-            return AuthenticateResult.Success(CreateTicket(
-                "static-api-client", "Static API client", _apiKeyOptions.Scopes));
-        }
 
         // Managed client keys have the format cm_<client-id>.<secret>. The database
         // stores only the SHA-256 hash of the randomly generated secret.
@@ -79,32 +70,5 @@ public sealed class ApiKeyAuthenticationHandler(
         var identity = new ClaimsIdentity(claims, ApiKeyAuthenticationDefaults.Scheme);
         return AuthenticateResult.Success(new AuthenticationTicket(
             new ClaimsPrincipal(identity), ApiKeyAuthenticationDefaults.Scheme));
-    }
-
-    private static AuthenticationTicket CreateTicket(string id, string name, IEnumerable<string> scopes)
-    {
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, id),
-            new(ClaimTypes.Name, name)
-        };
-        claims.AddRange(scopes
-            .Where(scope => !string.IsNullOrWhiteSpace(scope))
-            .Distinct(StringComparer.Ordinal)
-            .Select(scope => new Claim("scope", scope)));
-
-        return new AuthenticationTicket(
-            new ClaimsPrincipal(new ClaimsIdentity(claims, ApiKeyAuthenticationDefaults.Scheme)),
-            ApiKeyAuthenticationDefaults.Scheme);
-    }
-
-    private static bool FixedTimeEquals(string? supplied, string configured)
-    {
-        if (string.IsNullOrEmpty(supplied))
-            return false;
-
-        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
-        var configuredHash = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
-        return CryptographicOperations.FixedTimeEquals(suppliedHash, configuredHash);
     }
 }

@@ -25,12 +25,10 @@ namespace ContentManagement.IntegrationTests;
 [Collection(Collections.Integration)]
 public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
 {
-    private const string ApiKey = "integration-test-key-with-sufficient-entropy";
-
     [Fact]
     public async Task Health_endpoint_is_public()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/api/health");
@@ -43,7 +41,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Readiness_endpoint_reports_sql_server_healthy()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/health/ready");
@@ -55,7 +53,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Unsafe_request_without_origin_is_rejected()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync("/api/auth/logout", null);
@@ -66,7 +64,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Unsafe_request_from_same_origin_passes_origin_guard()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "http://localhost");
 
@@ -78,7 +76,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Unsafe_request_from_untrusted_origin_is_rejected()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "https://attacker.example");
 
@@ -90,7 +88,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Protected_endpoint_returns_401_without_api_key()
     {
-        using var factory = CreateFactory([ScopePolicies.FilesRead]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/api/test-protected/files");
@@ -101,7 +99,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Protected_endpoint_returns_401_for_invalid_api_key()
     {
-        using var factory = CreateFactory([ScopePolicies.FilesRead]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "wrong-key");
 
@@ -113,9 +111,10 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Protected_endpoint_returns_403_when_key_has_no_required_scope()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonRead]);
+        var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.JsonRead], isActive: true);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
 
         using var response = await client.GetAsync("/api/test-protected/files");
 
@@ -125,9 +124,10 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Protected_endpoint_returns_200_when_key_has_required_scope()
     {
-        using var factory = CreateFactory([ScopePolicies.FilesRead]);
+        var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.FilesRead], isActive: true);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
 
         using var response = await client.GetAsync("/api/test-protected/files");
 
@@ -139,7 +139,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     public async Task Managed_api_client_authenticates_with_its_assigned_scope()
     {
         var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.FilesRead], isActive: true);
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
 
@@ -153,7 +153,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     public async Task Managed_api_client_without_required_scope_is_forbidden()
     {
         var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.JsonRead], isActive: true);
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
 
@@ -166,7 +166,7 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     public async Task Disabled_managed_api_client_cannot_authenticate()
     {
         var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.FilesRead], isActive: false);
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
 
@@ -207,13 +207,10 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
     // Helpers
     // -------------------------------------------------------------------------
 
-    private WebApplicationFactory<Program> CreateFactory(string[] scopes) =>
-        new AuthorizationTestApplicationFactory(ApiKey, scopes, db.ConnectionString);
+    private WebApplicationFactory<Program> CreateFactory() =>
+        new AuthorizationTestApplicationFactory(db.ConnectionString);
 
-    private sealed class AuthorizationTestApplicationFactory(
-        string apiKey,
-        string[] scopes,
-        string connectionString)
+    private sealed class AuthorizationTestApplicationFactory(string connectionString)
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -225,12 +222,9 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
             {
                 var settings = new Dictionary<string, string?>
                 {
-                    ["Authentication:ApiKey"] = apiKey,
                     ["ConnectionStrings:ContentManagement"] = connectionString,
                     ["Hangfire:Enabled"] = "false"
                 };
-                for (var index = 0; index < scopes.Length; index++)
-                    settings[$"Authentication:Scopes:{index}"] = scopes[index];
 
                 configuration.AddInMemoryCollection(settings);
             });

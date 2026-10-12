@@ -1,12 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ContentManagement.IntegrationTests.Infrastructure;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Controllers;
+using ContentManagement.Server.Data;
+using ContentManagement.Server.Domain;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -15,7 +20,6 @@ namespace ContentManagement.IntegrationTests;
 [Collection(Collections.Integration)]
 public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
 {
-    private const string ApiKey = "json-integration-test-key-with-sufficient-entropy";
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() }
@@ -24,7 +28,7 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Json_endpoints_require_authentication()
     {
-        using var factory = CreateFactory([]);
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "http://localhost");
 
@@ -38,8 +42,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Json_endpoints_enforce_required_scopes()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonRead]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead]);
 
         using var list = await client.GetAsync("/api/json");
         using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, "test", "{\"ok\":true}"));
@@ -53,8 +57,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Json_document_can_be_created_read_listed_updated_and_permanently_deleted()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite, ScopePolicies.JsonDelete]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite, ScopePolicies.JsonDelete]);
         var type = $"integration-{Guid.NewGuid():N}";
         const string originalJson = "{\"enabled\":true,\"count\":1}";
         const string updatedJson = "{\"enabled\":false,\"count\":2}";
@@ -106,8 +110,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Create_generates_code_when_blank_and_rejects_duplicate_custom_code()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
         var code = $"integration-{Guid.NewGuid():N}";
 
         using var first = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-test", "{\"value\":1}"));
@@ -130,8 +134,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Create_rejects_malformed_json()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonWrite]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonWrite]);
 
         using var response = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, $"invalid-{Guid.NewGuid():N}", "{not-json"));
 
@@ -141,8 +145,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task Create_accepts_json_larger_than_previous_default_limit()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonWrite, ScopePolicies.JsonRead]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonWrite, ScopePolicies.JsonRead]);
         var type = $"large-{Guid.NewGuid():N}";
         var json = "{\"payload\":\"" + new string('x', 10 * 1024 * 1024 + 1) + "\"}";
 
@@ -158,8 +162,8 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     [Fact]
     public async Task List_clamps_page_size_and_filters_by_status()
     {
-        using var factory = CreateFactory([ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
-        using var client = CreateClient(factory);
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
         var type = $"paging-{Guid.NewGuid():N}";
         using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(null, type, "{\"ok\":true}"));
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
@@ -173,18 +177,39 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
         Assert.All(result.Items, item => Assert.Equal("Active", item.Status.ToString()));
     }
 
-    private WebApplicationFactory<Program> CreateFactory(string[] scopes) =>
-        new JsonApiTestApplicationFactory(ApiKey, scopes, db.ConnectionString);
+    private WebApplicationFactory<Program> CreateFactory() =>
+        new JsonApiTestApplicationFactory(db.ConnectionString);
 
-    private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
+    private async Task<HttpClient> CreateClientAsync(WebApplicationFactory<Program> factory, string[] scopes)
     {
+        var clientId = Guid.NewGuid().ToString("N");
+        var secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var secretHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret)));
+        var options = new DbContextOptionsBuilder<ContentManagementDbContext>()
+            .UseSqlServer(db.ConnectionString)
+            .Options;
+
+        await using var context = new ContentManagementDbContext(options);
+        context.ApiClients.Add(new ApiClient
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            Name = "Integration test client",
+            SecretHash = secretHash,
+            ScopesJson = JsonSerializer.Serialize(scopes),
+            IsActive = true,
+            CreatedUtc = DateTime.UtcNow,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, $"cm_{clientId}.{secret}");
         return client;
     }
 
-    private sealed class JsonApiTestApplicationFactory(
-        string apiKey, string[] scopes, string connectionString)
+    private sealed class JsonApiTestApplicationFactory(string connectionString)
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -194,12 +219,9 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
             {
                 var settings = new Dictionary<string, string?>
                 {
-                    ["Authentication:ApiKey"] = apiKey,
                     ["ConnectionStrings:ContentManagement"] = connectionString,
                     ["Hangfire:Enabled"] = "false"
                 };
-                for (var index = 0; index < scopes.Length; index++)
-                    settings[$"Authentication:Scopes:{index}"] = scopes[index];
                 configuration.AddInMemoryCollection(settings);
             });
         }
