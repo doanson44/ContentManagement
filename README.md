@@ -36,7 +36,7 @@ Preview generation is lazy and cached by the original file's SHA-256, serialized
 
 Each JSON document has a unique `Code` in addition to its internal GUID. Deleting a JSON document through `DELETE /api/json/{id}` permanently removes its row and payload from SQL Server immediately; JSON documents do not use the soft-delete/grace-period workflow. The admin editor lets you enter a code when creating or editing a document. Leave the code blank on create to have the server generate a value in the form `json-<guid>`. Codes are trimmed, limited to 100 characters, and may contain letters, numbers, dots, underscores, and hyphens; the first character must be a letter or number. Duplicate codes return HTTP 409. Existing records receive stable generated codes through the `AddJsonDocumentCode` migration. The JSON list search matches code, document type, SHA-256, and GUID.
 
-For API creation, send an optional `code` field with `documentType` and `json`. Omitting or sending a blank code generates one. For updates, omitting/blanking `code` preserves the existing code.
+For API creation, send an optional `code` field with `documentType` and `json`. Omitting or sending a blank code generates one. For updates, omitting/blanking `code` preserves the existing code. Retrieve a document directly by its code with authenticated `GET /api/json/by-code/{code}`; the response uses the same document details schema as `GET /api/json/{id}`.
 
 ## Authentication configuration
 
