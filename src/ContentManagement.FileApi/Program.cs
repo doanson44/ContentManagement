@@ -60,7 +60,11 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseSwagger();
-app.UseSwaggerUI(options => options.RoutePrefix = string.Empty);
+app.UseSwaggerUI(options =>
+{
+    options.RoutePrefix = string.Empty;
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement File API v1");
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
