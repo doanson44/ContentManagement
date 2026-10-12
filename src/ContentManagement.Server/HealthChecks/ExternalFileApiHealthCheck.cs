@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text.Json;
 using ContentManagement.Server.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -40,36 +37,23 @@ public sealed class ExternalFileApiHealthCheck(
                 return HealthCheckResult.Unhealthy("External File API URL is invalid or does not use HTTPS.");
             }
 
+            var key = _protector.Unprotect(settings.ExternalStorageApiKeyProtected);
+            var endpoint = new Uri(baseUri.ToString().TrimEnd('/') + "/api/files/health");
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            request.Headers.Add("X-API-Key", key);
+
             var client = httpClientFactory.CreateClient(nameof(ExternalFileApiHealthCheck));
-            using var request = new HttpRequestMessage(HttpMethod.Get,
-                new Uri(baseUri.ToString().TrimEnd('/') + "/health"));
             using var response = await client.SendAsync(
                 request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 return HealthCheckResult.Unhealthy(
-                    $"External File API health endpoint returned HTTP {(int)response.StatusCode}.");
+                    $"External File API health check returned HTTP {(int)response.StatusCode}.");
             }
 
-            // A deliberately nonexistent path verifies the protected endpoint and API key
-            // without enumerating storage or downloading a real binary.
-            var key = _protector.Unprotect(settings.ExternalStorageApiKeyProtected);
-            using var authRequest = new HttpRequestMessage(HttpMethod.Get,
-                new Uri(baseUri.ToString().TrimEnd('/') + "/api/files/download?filePath=__health_check_probe__.bin"));
-            authRequest.Headers.Add("X-API-Key", key);
-
-            using var authResponse = await client.SendAsync(
-                authRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-            if (authResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                return HealthCheckResult.Unhealthy("External File API is reachable, but API key authentication failed.");
-
-            if (authResponse.StatusCode != HttpStatusCode.NotFound && !authResponse.IsSuccessStatusCode)
-                return HealthCheckResult.Unhealthy(
-                    $"External File API authenticated check returned HTTP {(int)authResponse.StatusCode}.");
-
-            return HealthCheckResult.Healthy("External File API is reachable and API key authentication succeeded.");
+            return HealthCheckResult.Healthy(
+                "External File API is reachable and API key authentication succeeded.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
