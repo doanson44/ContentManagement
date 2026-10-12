@@ -98,6 +98,16 @@ public sealed class FilesController(
                         }
                     }
 
+                    if (externalBinary.SizeBytes > remaining || externalBinary.SizeBytes != file.Length)
+                    {
+                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, cancellationToken); }
+                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary that exceeded the reserved quota."); }
+                        logger.LogError("External File API reported an unexpected file size {ActualSize} for upload size {ExpectedSize}.",
+                            externalBinary.SizeBytes, file.Length);
+                        return StatusCode(StatusCodes.Status502BadGateway,
+                            new { message = "External File API returned unexpected file size metadata." });
+                    }
+
                     var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer);
                     try
                     {
