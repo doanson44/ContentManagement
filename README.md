@@ -5,7 +5,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 ## Implemented foundation
 
 - The hosted web application consists of `ContentManagement.Client` and `ContentManagement.Server`.
-- `ContentManagement.FileApi` is a separate, standalone filesystem API process. It does not reference the web server project and does not use a database.
+- `ContentManagement.FileApi` is a separate, standalone filesystem API process. It does not reference the web server project; its readiness health check verifies the configured MySQL dependency.
 - Server-hosted Blazor WebAssembly static assets and client-side routing.
 - EF Core SQL Server context and initial migration for binary metadata and compressed JSON records.
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
@@ -233,11 +233,11 @@ Managed API clients are authenticated through the existing X-Content-Management-
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
 
-## DB2 health check
+## MySQL health check
 
-The File API readiness endpoint `GET /health` checks connectivity to the configured DB2 database by opening a connection and running `SELECT 1 FROM SYSIBM.SYSDUMMY1`. The check has an 8-second health-check timeout and reports unhealthy if the connection string is missing, the database cannot be reached, authentication fails, or the probe query fails. It does not read or modify application data.
+The File API `GET /health` endpoint checks connectivity to the configured MySQL database by opening a connection and running `SELECT 1`. The check has an 8-second overall health-check timeout, uses a 5-second connection/query timeout, and reports unhealthy if the connection string is missing, the database cannot be reached, authentication fails, or the probe query fails. It does not read or modify application data.
 
-Configure `ConnectionStrings:Db2` in `src/ContentManagement.FileApi/appsettings.json` for local development. For production, prefer overriding it with the `ConnectionStrings__Db2` environment variable or a secret provider so credentials are not committed to source control. The connection string must match the DB2 server type and installed IBM Data Server Driver requirements.
+Configure `ConnectionStrings:MySql` in `src/ContentManagement.FileApi/appsettings.json` for local development. For production, override it with the `ConnectionStrings__MySql` environment variable or a secret provider so credentials are not committed to source control. Example connection string format: `Server=<host>;Port=3306;Database=<database>;User ID=<username>;Password=<secret>;`. The File API's file bytes remain on the filesystem; MySQL is checked as a dependency and is not used for file storage.
 
 ## Quick Notes
 
