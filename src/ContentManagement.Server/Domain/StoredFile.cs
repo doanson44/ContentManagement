@@ -26,6 +26,8 @@ public sealed class StoredFile
 
     public ContentStatus Status { get; set; } = ContentStatus.Active;
 
+    public FileUploadSource UploadSource { get; set; } = FileUploadSource.Local;
+
     [MaxLength(200)]
     public string? OwnerId { get; set; }
 
