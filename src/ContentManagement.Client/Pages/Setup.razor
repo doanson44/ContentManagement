@@ -56,7 +56,7 @@ else if (_signedIn)
                 <div class="setup-form-grid">
                     <label>External API base URL
                         <input type="url" @bind="_model.ExternalStorageBaseUrl" placeholder="https://files.example.com" disabled="@_busy" />
-                        <small>Use the API root URL, without /api/files. HTTPS is required outside localhost.</small>
+                        <small>Use the API root URL, without /api/files. HTTP and HTTPS are supported; HTTPS is recommended for non-local networks.</small>
                     </label>
                     <label>External API key
                         <input type="password" @bind="_model.ExternalStorageApiKey" autocomplete="new-password" placeholder="@(_model.ExternalStorageApiKeyConfigured ? "Configured — leave blank to keep current key" : "Enter API key")" disabled="@_busy" />
