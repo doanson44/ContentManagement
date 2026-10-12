@@ -2,6 +2,7 @@
 @using System.Net.Http.Json
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 <PageTitle>API clients · ContentManagement</PageTitle>
 
@@ -268,9 +269,6 @@ else
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
     }
-
-    [Microsoft.AspNetCore.Components.Inject]
-    private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
 
     private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", message);
 
