@@ -65,6 +65,20 @@ public sealed class ExternalFileApiClient(
         return response;
     }
 
+    public async Task<IReadOnlyList<ExternalFileInventoryItem>> ListConfiguredFilesAsync(
+        DateTime olderThanUtc, CancellationToken cancellationToken)
+    {
+        var settings = await GetConfiguredSettingsAsync(cancellationToken);
+        var client = httpClientFactory.CreateClient(nameof(ExternalFileApiClient));
+        using var request = CreateAuthorizedRequest(HttpMethod.Get,
+            $"{NormalizeBaseUrl(settings.ExternalStorageBaseUrl)}/api/files/inventory?olderThanUtc={Uri.EscapeDataString(olderThanUtc.ToUniversalTime().ToString("O"))}",
+            settings.ExternalStorageApiKeyProtected);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<List<ExternalFileInventoryItem>>(JsonOptions, cancellationToken)
+            ?? throw new HttpRequestException("External File API returned an empty inventory response.");
+    }
+
     public async Task DeleteAsync(string baseUrl, string protectedApiKey, string storageKey, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient(nameof(ExternalFileApiClient));
@@ -105,5 +119,5 @@ public sealed class ExternalFileApiClient(
         return uri.ToString().TrimEnd('/');
     }
 
-    private sealed record ExternalStoredFile(string FilePath, long SizeBytes, string Sha256);
+    private sealed record ExternalStoredFile(string FilePath, long SizeBytes, string Sha256);\n    public sealed record ExternalFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
 }
