@@ -1,6 +1,7 @@
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Storage;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -33,16 +34,30 @@ public sealed class FileViewTokenServiceTests
         Assert.False(service.TryValidate(tampered, out _));
     }
 
-    private static FileViewTokenService CreateService()
+    [Fact]
+    public void File_view_signing_does_not_require_static_api_key()
     {
+        var service = CreateService(includeSigningKey: false);
+        var fileId = Guid.NewGuid();
+        var url = service.CreateRelativeUrl(fileId);
+        var token = url[(url.LastIndexOf('/') + 1)..];
+
+        Assert.True(service.TryValidate(token, out var resolvedId));
+        Assert.Equal(fileId, resolvedId);
+    }
+
+    private static FileViewTokenService CreateService(bool includeSigningKey = true)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (includeSigningKey)
+            settings["ContentManagement:FileViewSigningKey"] = "unit-test-file-view-signing-key-32chars";
+
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Authentication:ApiKey"] = "unit-test-key-that-is-not-a-production-secret"
-            })
+            .AddInMemoryCollection(settings)
             .Build();
         return new FileViewTokenService(
             configuration,
-            Options.Create(new ContentManagementOptions { PublicBaseUrl = "https://content.example.com" }));
+            Options.Create(new ContentManagementOptions { PublicBaseUrl = "https://content.example.com" }),
+            NullLogger<FileViewTokenService>.Instance);
     }
 }
