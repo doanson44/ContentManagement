@@ -156,6 +156,30 @@ public sealed class FilesController(
         return Ok(ToDetails(file));
     }
 
+    [HttpPost("{id:guid}/restore")]
+    [Authorize(Policy = ScopePolicies.FilesWrite)]
+    public async Task<IActionResult> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await db.Files.SingleOrDefaultAsync(
+            f => f.Id == id && f.Status == ContentStatus.MarkedForDeletion, cancellationToken);
+        if (file is null)
+            return Conflict(new { message = "Only files marked for deletion can be restored." });
+
+        file.Status = ContentStatus.Active;
+        file.UpdatedUtc = DateTime.UtcNow;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "File metadata changed. Refresh and retry." });
+        }
+
+        logger.LogInformation("Restored file {FileId} from marked-for-deletion state.", file.Id);
+        return Ok(ToDetails(file));
+    }
+
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = ScopePolicies.FilesDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
