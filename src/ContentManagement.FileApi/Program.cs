@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
 
 builder.Services.AddOptions<FileApiOptions>()
     .Bind(builder.Configuration.GetSection(FileApiOptions.SectionName))
