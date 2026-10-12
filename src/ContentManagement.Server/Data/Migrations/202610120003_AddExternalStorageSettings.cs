@@ -17,7 +17,7 @@ public sealed class AddExternalStorageSettings : Migration
             type: "nvarchar(500)", maxLength: 500, nullable: false, defaultValue: "");
         migrationBuilder.AddColumn<string>(
             name: "ExternalStorageApiKeyProtected", table: "SystemSettings",
-            type: "nvarchar(4096)", maxLength: 4096, nullable: false, defaultValue: "");
+            type: "nvarchar(4000)", maxLength: 4000, nullable: false, defaultValue: "");
         migrationBuilder.AddColumn<long>(
             name: "ExternalStorageQuotaBytes", table: "SystemSettings",
             type: "bigint", nullable: false, defaultValue: 10737418240L);
