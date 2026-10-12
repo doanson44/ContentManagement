@@ -11,6 +11,8 @@ public sealed class StaleFileCleanupJob(
     IFileStorage fileStorage,
     ILogger<StaleFileCleanupJob> logger)
 {
+    private sealed record StaleFile(Guid Id, string StorageKey);
+
     [DisableConcurrentExecution(timeoutInSeconds: 300)]
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
@@ -21,11 +23,13 @@ public sealed class StaleFileCleanupJob(
 
         var deletionBefore = now.AddDays(-settings.StaleFileAgeDays);
         var readyForDeletion = await db.Files
+            .AsNoTracking()
             .Where(file =>
-                (file.Status == ContentStatus.MarkedForDeletion || file.Status == ContentStatus.Deleting) &&
+                file.Status == ContentStatus.MarkedForDeletion &&
                 file.UpdatedUtc <= deletionBefore)
             .OrderBy(file => file.UpdatedUtc)
             .Take(100)
+            .Select(file => new StaleFile(file.Id, file.StorageKey))
             .ToListAsync(cancellationToken);
 
         var deletedCount = 0;
@@ -34,27 +38,33 @@ public sealed class StaleFileCleanupJob(
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                file.Status = ContentStatus.Deleting;
-                await db.SaveChangesAsync(cancellationToken);
-
+                // Delete the binary first. Only remove the SQL record after the storage
+                // deletion succeeds, so a failed file delete cannot orphan metadata.
                 await fileStorage.DeleteAsync(file.StorageKey, cancellationToken);
-                db.Files.Remove(file);
-                await db.SaveChangesAsync(cancellationToken);
-                deletedCount++;
+
+                var affectedRows = await db.Files
+                    .Where(current => current.Id == file.Id &&
+                        current.Status == ContentStatus.MarkedForDeletion &&
+                        current.UpdatedUtc <= deletionBefore)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                if (affectedRows == 1)
+                    deletedCount++;
+                else
+                    logger.LogInformation(
+                        "Skipped metadata deletion for stale file {FileId} because its state changed during cleanup.",
+                        file.Id);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the file-age threshold.", file.Id);
-                // Keep UpdatedUtc unchanged: once the grace period has elapsed, a failed
-                // cleanup should be retried on the next scheduled run, not wait another full period.
-                file.Status = ContentStatus.MarkedForDeletion;
-                db.Entry(file).State = EntityState.Modified;
-                await db.SaveChangesAsync(cancellationToken);
+                logger.LogError(exception,
+                    "Failed to hard-delete stale file {FileId}; cleanup will retry on the next scheduled run.",
+                    file.Id);
             }
         }
 
         if (readyForDeletion.Count > 0)
-            logger.LogInformation("Stale file cleanup deleted {DeletedCount} of {EligibleCount} eligible marked files.",
+            logger.LogInformation("Stale file cleanup hard-deleted {DeletedCount} of {EligibleCount} eligible marked files.",
                 deletedCount, readyForDeletion.Count);
     }
 }
