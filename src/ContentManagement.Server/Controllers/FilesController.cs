@@ -19,7 +19,8 @@ public sealed class FilesController(
     IFileStorage storage,
     IVideoPreviewService videoPreviewService,
     IOptions<ContentManagementOptions> options,
-    ILogger<FilesController> logger) : ControllerBase
+    ILogger<FilesController> logger,
+    FileViewTokenService viewTokens) : ControllerBase
 {
     private const int MaxPageSize = 100;
 
@@ -44,12 +45,12 @@ public sealed class FilesController(
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(f => new
             {
-                f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+                f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
                 f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
             })
             .ToListAsync(cancellationToken);
-        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion))).ToList();
+        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
+            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion), viewTokens.CreateRelativeUrl(f.Id))).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
@@ -100,6 +101,24 @@ public sealed class FilesController(
             throw;
         }
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity));
+    }
+
+    [HttpGet("view/{token}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ViewWithToken(string token, CancellationToken cancellationToken)
+    {
+        if (!viewTokens.TryValidate(token, out var fileId)) return NotFound();
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+        if (file is null || file.Status != ContentStatus.Active) return NotFound();
+        try
+        {
+            var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
+            Response.Headers["Content-Disposition"] = "inline; filename*=UTF-8''" + Uri.EscapeDataString(file.FileName);
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException) { return NotFound(); }
     }
 
     [HttpGet("{id:guid}")]
@@ -262,14 +281,14 @@ public sealed class FilesController(
             ? "application/octet-stream" : value;
     }
 
-    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.ContentType,
+    private FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.StorageKey, file.ContentType,
         file.SizeBytes, file.Sha256, file.Status, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
-        Convert.ToBase64String(file.RowVersion));
+        Convert.ToBase64String(file.RowVersion), viewTokens.CreateRelativeUrl(file.Id));
 
-    public sealed record FileListItem(Guid Id, string FileName, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+    public sealed record FileListItem(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
-    public sealed record FileDetails(Guid Id, string FileName, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+    public sealed record FileDetails(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record RenameFileRequest([Required, StringLength(255)] string FileName, string? RowVersion);
 }

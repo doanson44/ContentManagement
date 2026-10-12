@@ -94,6 +94,97 @@ public sealed class JsonDocumentsController(
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity, request.Json));
     }
 
+    [HttpPut("by-code/{code}")]
+    [Authorize(Policy = ScopePolicies.JsonWrite)]
+    [Consumes("application/json")]
+    public async Task<ActionResult<JsonDocumentDetails>> UpsertByCode(
+        string code, [FromBody] UpsertJsonDocumentRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest(new { message = "Code is required." });
+        var normalizedCode = NormalizeOrGenerateCode(code);
+        if (normalizedCode is null)
+            return BadRequest(new { message = "Code must be 1-100 characters, start with a letter or number, and contain only letters, numbers, dots, underscores or hyphens." });
+        if (string.IsNullOrWhiteSpace(request.DocumentType) || request.DocumentType.Trim().Length > 200)
+            return BadRequest(new { message = "DocumentType is required and must not exceed 200 characters." });
+        if (request.Json is null)
+            return BadRequest(new { message = "Json is required." });
+
+        CompressedContent compressed;
+        try { compressed = compressor.CompressJson(request.Json); }
+        catch (System.Text.Json.JsonException) { return BadRequest(new { message = "Json must contain valid JSON." }); }
+
+        // The unique Code index plus SERIALIZABLE range locking makes lookup-and-create
+        // atomic for concurrent requests using the same code.
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, cancellationToken);
+
+        var entity = await db.JsonDocuments
+            .SingleOrDefaultAsync(x => x.Code == normalizedCode, cancellationToken);
+        var now = DateTime.UtcNow;
+        var created = entity is null;
+
+        if (entity is null)
+        {
+            entity = new JsonDocumentRecord
+            {
+                Id = Guid.NewGuid(),
+                Code = normalizedCode,
+                CreatedUtc = now,
+                Status = ContentStatus.Active
+            };
+            db.JsonDocuments.Add(entity);
+        }
+        else if (entity.Status != ContentStatus.Active)
+        {
+            return Conflict(new { message = "A document with this code exists but is not active; it cannot be upserted." });
+        }
+
+        entity.DocumentType = request.DocumentType.Trim();
+        entity.CompressedPayload = compressed.Bytes;
+        entity.UncompressedSizeBytes = compressed.UncompressedSizeBytes;
+        entity.CompressedSizeBytes = compressed.Bytes.LongLength;
+        entity.Sha256 = compressed.Sha256;
+        entity.UpdatedUtc = now;
+        entity.OwnerId ??= User.FindFirst("sub")?.Value;
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        var details = ToDetails(entity, request.Json);
+        if (created)
+            return CreatedAtAction(nameof(GetByCode), new { code = normalizedCode }, details);
+        return Ok(details);
+    }
+
+    [HttpGet("by-code/{code}")]
+    [Authorize(Policy = ScopePolicies.JsonRead)]
+    public async Task<ActionResult<JsonDocumentDetails>> GetByCode(string code, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length > 100)
+            return BadRequest(new { message = "Code is required and must not exceed 100 characters." });
+
+        var normalizedCode = code.Trim();
+        var entity = await db.JsonDocuments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Code == normalizedCode, cancellationToken);
+        if (entity is null || entity.Status is ContentStatus.MarkedForDeletion or ContentStatus.Deleting or ContentStatus.Deleted)
+            return NotFound();
+
+        try { return Ok(ToDetails(entity, compressor.DecompressJson(entity.CompressedPayload))); }
+        catch (System.Text.Json.JsonException)
+        {
+            return Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Stored JSON is corrupted.");
+        }
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Policy = ScopePolicies.JsonRead)]
     public async Task<ActionResult<JsonDocumentDetails>> Get(Guid id, CancellationToken cancellationToken)
@@ -174,6 +265,9 @@ public sealed record CreateJsonDocumentRequest(
     [Required] string Json);
 public sealed record UpdateJsonDocumentRequest(
     [StringLength(100)] string? Code,
+    [Required, StringLength(200, MinimumLength = 1)] string DocumentType,
+    [Required] string Json);
+public sealed record UpsertJsonDocumentRequest(
     [Required, StringLength(200, MinimumLength = 1)] string DocumentType,
     [Required] string Json);
 public sealed record JsonDocumentListItem(

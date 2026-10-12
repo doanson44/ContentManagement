@@ -102,11 +102,11 @@ else if (_signedIn)
                                 @foreach (var client in _clients)
                                 {
                                     <tr @key="client.Id">
-                                        <td><strong>@client.Name</strong><small>@client.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
-                                        <td><code>@client.ClientId</code></td>
-                                        <td>@string.Join(", ", client.Scopes)</td>
-                                        <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
-                                        <td class="api-client-row-actions">
+                                        <td data-label="Name"><strong>@client.Name</strong><small>@client.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
+                                        <td data-label="Client ID"><code>@client.ClientId</code></td>
+                                        <td data-label="Permissions">@string.Join(", ", client.Scopes)</td>
+                                        <td data-label="Status">@(client.IsActive ? "Enabled" : "Disabled")</td>
+                                        <td data-label="Actions" class="api-client-row-actions">
                                             <button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button>
                                             <button class="files-secondary" @onclick="() => RotateSecretAsync(client)" disabled="@_busy">Rotate</button>
                                             <button class="files-danger" @onclick="() => ConfirmDelete(client)" disabled="@_busy">Delete</button>

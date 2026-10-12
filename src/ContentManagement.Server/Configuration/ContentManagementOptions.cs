@@ -17,6 +17,8 @@ public sealed class ContentManagementOptions
 
     public string? PreviewCacheRoot { get; init; }
 
+    public string? PublicBaseUrl { get; init; }
+
     [Range(0, long.MaxValue)]
     public long MaxPreviewCacheBytes { get; init; } = 2L * 1024 * 1024 * 1024;
 

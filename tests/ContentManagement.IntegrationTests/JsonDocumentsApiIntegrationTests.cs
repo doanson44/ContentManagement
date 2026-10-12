@@ -55,6 +55,74 @@ public sealed class JsonDocumentsApiIntegrationTests(SqlServerFixture db)
     }
 
     [Fact]
+    public async Task Upsert_by_code_creates_then_updates_same_document()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
+        var code = $"upsert-{Guid.NewGuid():N}";
+
+        using var create = await client.PutAsJsonAsync($"/api/json/by-code/{Uri.EscapeDataString(code)}",
+            new UpsertJsonDocumentRequest("upsert-test", "{\"value\":1}"));
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var created = await create.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(created);
+        Assert.Equal(code, created.Code);
+        Assert.Equal("{\"value\":1}", created.Json);
+
+        using var update = await client.PutAsJsonAsync($"/api/json/by-code/{Uri.EscapeDataString(code)}",
+            new UpsertJsonDocumentRequest("upsert-test-updated", "{\"value\":2}"));
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        var updated = await update.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(updated);
+        Assert.Equal(created.Id, updated.Id);
+        Assert.Equal(code, updated.Code);
+        Assert.Equal("upsert-test-updated", updated.DocumentType);
+        Assert.Equal("{\"value\":2}", updated.Json);
+    }
+
+    [Fact]
+    public async Task Upsert_by_code_requires_json_write_scope()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead]);
+
+        using var response = await client.PutAsJsonAsync($"/api/json/by-code/upsert-scope-{Guid.NewGuid():N}",
+            new UpsertJsonDocumentRequest("scope-test", "{\"ok\":true}"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Json_document_can_be_retrieved_by_code()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead, ScopePolicies.JsonWrite]);
+        var code = $"lookup-{Guid.NewGuid():N}";
+        const string json = "{\"source\":\"code-lookup\",\"enabled\":true}";
+
+        using var create = await client.PostAsJsonAsync("/api/json", new CreateJsonDocumentRequest(code, "code-lookup-test", json));
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+
+        using var get = await client.GetAsync($"/api/json/by-code/{Uri.EscapeDataString(code)}");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var document = await get.Content.ReadFromJsonAsync<JsonDocumentDetails>(WebJsonOptions);
+        Assert.NotNull(document);
+        Assert.Equal(code, document.Code);
+        Assert.Equal(json, document.Json);
+    }
+
+    [Fact]
+    public async Task Get_by_code_returns_not_found_for_unknown_code()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateClientAsync(factory, [ScopePolicies.JsonRead]);
+
+        using var response = await client.GetAsync($"/api/json/by-code/{Uri.EscapeDataString($"missing-{Guid.NewGuid():N}")}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Json_document_can_be_created_read_listed_updated_and_permanently_deleted()
     {
         using var factory = CreateFactory();
