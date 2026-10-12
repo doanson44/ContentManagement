@@ -65,6 +65,12 @@ public sealed class FilesController(
 
         var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
         if (settings?.ExternalStoragePreferred == true &&
+            (string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) ||
+             string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected)))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "External API preference is enabled but the External File API is not fully configured." });
+
+        if (settings?.ExternalStoragePreferred == true &&
             !string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) &&
             !string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))
         {
