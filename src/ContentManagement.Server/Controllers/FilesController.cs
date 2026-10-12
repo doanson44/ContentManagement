@@ -50,7 +50,7 @@ public sealed class FilesController(
             })
             .ToListAsync(cancellationToken);
         var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion))).ToList();
+            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion), viewTokens.CreateRelativeUrl(f.Id))).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
