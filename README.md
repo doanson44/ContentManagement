@@ -10,6 +10,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
 - Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
 - Lifecycle status enum and SQL row-version concurrency tokens.
+- File metadata records `UploadSource` (`Local` or `ExternalServer`); uploads authenticated with a managed API key are classified as external-server uploads, while browser/admin uploads are classified as local. Existing rows default to `Local` through an additive migration.
 - All EF Core enum properties are stored in SQL Server as their symbolic string names; the `EnumValuesAsStrings` migration converts existing numeric file/document statuses.
 - Managed API-client authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. Browser administrators use the admin session cookie. All endpoints require authentication by default; health and signed file-view URLs are explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
@@ -148,8 +149,7 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 
 ## Data and storage notes
 
-- Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server.
-- File API responses expose `filePath` as a storage-relative key, never an absolute filesystem path. Upload and metadata responses include `viewUrl`, a signed 15-minute URL for inline viewing. Anyone possessing the URL can view that one active file until expiry; treat it as a secret. File-view signing uses the independent `ContentManagement:FileViewSigningKey` setting and does not depend on managed API-client credentials. Configure a stable random signing key of at least 32 characters in production; if omitted, the server generates a process-local key and logs a warning, so existing view URLs become invalid after a server restart. Use HTTPS before sharing them. Example PowerShell configuration: `$env:ContentManagement__FileViewSigningKey = "<at-least-32-character-random-secret>"`. Store this value in a protected environment variable or secret manager, not in source control. Set `ContentManagement:PublicBaseUrl` to the externally reachable HTTPS origin when consumers need absolute view URLs. For example, set `ContentManagement__PublicBaseUrl=https://content.example.com` in the server environment. Without this setting, `viewUrl` is a relative path that clients can resolve against the server origin.
+- Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server, including the upload source (`Local` or `ExternalServer`).
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
