@@ -30,11 +30,5 @@ public sealed class SystemSettings
 
     public int StaleFileAgeDays { get; set; } = 90;
 
-    public int CleanupIntervalHours { get; set; } = 24;
-
-    public int DeletionGracePeriodDays { get; set; } = 7;
-
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
-
-    public DateTime? LastCleanupUtc { get; set; }
 }
