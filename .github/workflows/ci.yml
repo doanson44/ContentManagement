@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [master]
+    branches: [master, feature/file-upload-source]
   pull_request:
     branches: [master]
 permissions:
