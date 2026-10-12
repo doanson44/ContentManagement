@@ -1,6 +1,7 @@
 using ContentManagement.FileApi.Storage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using ContentManagement.FileApi.Configuration;
 
@@ -11,12 +12,32 @@ namespace ContentManagement.FileApi.Controllers;
 [Authorize]
 public sealed class FilesController(
     FileStorageService storage,
-    IOptions<FileApiOptions> options) : ControllerBase
+    IOptions<FileApiOptions> options,
+    HealthCheckService healthCheckService) : ControllerBase
 {
     /// <summary>Authenticated health probe for server-to-server checks.</summary>
     [HttpGet("health")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult AuthenticatedHealth() => Ok(new { status = "Healthy" });
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> AuthenticatedHealth(CancellationToken cancellationToken)
+    {
+        var report = await healthCheckService.CheckHealthAsync(cancellationToken);
+        var statusCode = report.Status == HealthStatus.Healthy
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status503ServiceUnavailable;
+
+        return StatusCode(statusCode, new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.ToDictionary(
+                entry => entry.Key,
+                entry => new
+                {
+                    status = entry.Value.Status.ToString(),
+                    description = entry.Value.Description
+                })
+        });
+    }
 
     /// <summary>Uploads a binary file to the configured storage root using a relative filePath.</summary>
     [HttpPut]
