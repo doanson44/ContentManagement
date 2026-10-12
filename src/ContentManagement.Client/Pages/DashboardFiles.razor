@@ -208,7 +208,7 @@ else
     private void CloseRename() { if (_busy) return; _renameOpen = false; }
 
     private async Task UploadSubtitleAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args) {
-        if (_selected is null || !IsVideo(_selected.ContentType)) return;
+        if (_selected is null || !(IsVideo(_selected.ContentType) || IsVideoExtension(_selected.FileName))) return;
         var file=args.File;
         if (!file.Name.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase) ||
             (!string.IsNullOrWhiteSpace(file.ContentType) && file.ContentType != "text/vtt" && file.ContentType != "application/octet-stream")) {
