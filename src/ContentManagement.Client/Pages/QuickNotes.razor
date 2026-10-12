@@ -25,7 +25,7 @@
     {
         <section class="quick-notes-state" role="alert">
             <p>@_error</p>
-            <button type="button" @onclick="() => Navigation.NavigateTo("/", replace: true)">Sign in</button>
+            <button type="button" @onclick="SignIn">Sign in</button>
         </section>
     }
     else
@@ -140,7 +140,7 @@
     .quick-notes-editor-empty { display: grid; align-content: center; justify-items: center; flex: 1; }
     .quick-notes-editor-empty h2 { color: #172033; }
     .quick-notes-error { margin-bottom: 16px; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; background: #fef2f2; color: #991b1b; }
-    @media (max-width: 760px) { .quick-notes-page { padding: 18px; } .quick-notes-header { align-items: flex-start; } .quick-notes-layout { grid-template-columns: 1fr; } .quick-notes-sidebar { border-right: 0; border-bottom: 1px solid #e2e8f0; } .quick-notes-list { max-height: 240px; overflow: auto; } .quick-notes-editor { padding: 18px; } }
+    @@media (max-width: 760px) { .quick-notes-page { padding: 18px; } .quick-notes-header { align-items: flex-start; } .quick-notes-layout { grid-template-columns: 1fr; } .quick-notes-sidebar { border-right: 0; border-bottom: 1px solid #e2e8f0; } .quick-notes-list { max-height: 240px; overflow: auto; } .quick-notes-editor { padding: 18px; } }
 </style>
 
 @code {
@@ -192,6 +192,8 @@
             _loading = false;
         }
     }
+
+    private void SignIn() => Navigation.NavigateTo("/", replace: true);
 
     private async Task CreateNoteAsync()
     {
