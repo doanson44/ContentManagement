@@ -265,4 +265,10 @@ public sealed class FfmpegVideoPreviewService(
         catch (UnauthorizedAccessException) { }
     }
 }
-\npublic interface IFileStorageInventory\n{\n    IReadOnlyList<StoredFileInventoryItem> ListOrphanCandidates(DateTime olderThanUtc);\n}\n\npublic sealed record StoredFileInventoryItem(string StorageKey, DateTime LastWriteTimeUtc, long SizeBytes);\n
+
+public interface IFileStorageInventory
+{
+    IReadOnlyList<StoredFileInventoryItem> ListOrphanCandidates(DateTime olderThanUtc);
+}
+
+public sealed record StoredFileInventoryItem(string StorageKey, DateTime LastWriteTimeUtc, long SizeBytes);
