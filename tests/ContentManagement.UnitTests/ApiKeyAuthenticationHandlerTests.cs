@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using ContentManagement.Server.Auth;
+using ContentManagement.Server.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -25,6 +27,7 @@ public sealed class ApiKeyAuthenticationHandlerTests
     [Theory]
     [InlineData("")]
     [InlineData("wrong-key")]
+    [InlineData("cm_not-a-client-key")]
     public async Task Invalid_key_fails_authentication(string suppliedKey)
     {
         var result = await AuthenticateAsync(suppliedKey);
@@ -73,11 +76,16 @@ public sealed class ApiKeyAuthenticationHandlerTests
             ApiKey = ConfiguredKey,
             Scopes = scopes
         };
+        using var db = new ContentManagementDbContext(
+            new DbContextOptionsBuilder<ContentManagementDbContext>()
+                .UseSqlServer("Server=localhost;Database=ContentManagementTests;Integrated Security=True;TrustServerCertificate=True")
+                .Options);
         var handler = new ApiKeyAuthenticationHandler(
             new TestOptionsMonitor<AuthenticationSchemeOptions>(new AuthenticationSchemeOptions()),
             NullLoggerFactory.Instance,
             UrlEncoder.Default,
-            Options.Create(options));
+            Options.Create(options),
+            db);
 
         var context = new DefaultHttpContext();
         if (suppliedKeys is not null)

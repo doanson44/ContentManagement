@@ -85,6 +85,12 @@ else if (_signedIn)
                         <p>Configure stale-file cleanup and deletion grace periods.</p>
                         <div class="module-footer"><span>System configuration</span><a href="/dashboard/setup">Open ↗</a></div>
                     </article>
+                    <article class="module-card">
+                        <div class="module-icon permission-icon">API</div>
+                        <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Available</span></div>
+                        <p>Register integrations, assign least-privilege scopes, and rotate or revoke credentials.</p>
+                        <div class="module-footer"><span>Integration security</span><a href="/dashboard/api-clients">Open ↗</a></div>
+                    </article>
                 </section>
             }
             <footer class="dashboard-footer">ContentManagement <span>·</span> Workspace</footer>
@@ -148,7 +154,7 @@ else
 
     private bool CanAccessFiles => HasAnyPermission("files.read", "files.write", "files.delete");
     private bool CanAccessJson => HasAnyPermission("json.read", "json.write", "json.delete");
-    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0) + (_isAdministrator ? 1 : 0);
+    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0) + (_isAdministrator ? 2 : 0);
 
     private bool HasAnyPermission(params string[] requiredPermissions) =>
         _isAdministrator || _permissions.Any(permission =>

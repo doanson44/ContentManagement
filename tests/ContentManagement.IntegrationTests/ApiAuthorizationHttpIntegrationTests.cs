@@ -1,8 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using ContentManagement.IntegrationTests.Infrastructure;
 using ContentManagement.Server.Controllers;
 using ContentManagement.Server.Auth;
+using ContentManagement.Server.Data;
+using ContentManagement.Server.Domain;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -127,6 +133,74 @@ public sealed class ApiAuthorizationHttpIntegrationTests(SqlServerFixture db)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("authorized", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Managed_api_client_authenticates_with_its_assigned_scope()
+    {
+        var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.FilesRead], isActive: true);
+        using var factory = CreateFactory([]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+
+        using var response = await client.GetAsync("/api/test-protected/files");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("authorized", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Managed_api_client_without_required_scope_is_forbidden()
+    {
+        var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.JsonRead], isActive: true);
+        using var factory = CreateFactory([]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+
+        using var response = await client.GetAsync("/api/test-protected/files");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Disabled_managed_api_client_cannot_authenticate()
+    {
+        var (apiKey, _) = await SeedManagedClientAsync([ScopePolicies.FilesRead], isActive: false);
+        using var factory = CreateFactory([]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+
+        using var response = await client.GetAsync("/api/test-protected/files");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private async Task<(string ApiKey, Guid Id)> SeedManagedClientAsync(string[] scopes, bool isActive)
+    {
+        var id = Guid.NewGuid();
+        var clientId = Guid.NewGuid().ToString("N");
+        var secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var secretHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret)));
+        var options = new DbContextOptionsBuilder<ContentManagementDbContext>()
+            .UseSqlServer(db.ConnectionString)
+            .Options;
+
+        await using var context = new ContentManagementDbContext(options);
+        context.ApiClients.Add(new ApiClient
+        {
+            Id = id,
+            ClientId = clientId,
+            Name = "Integration test client",
+            SecretHash = secretHash,
+            ScopesJson = JsonSerializer.Serialize(scopes),
+            IsActive = isActive,
+            CreatedUtc = DateTime.UtcNow,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        return ($"cm_{clientId}.{secret}", id);
     }
 
     // -------------------------------------------------------------------------

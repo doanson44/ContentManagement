@@ -36,7 +36,7 @@ Use a secret manager or protected environment variables in production; never emb
 
 Supported scopes are `files.read`, `files.write`, `files.delete`, `json.read`, `json.write`, and `json.delete`. Grant only required scopes. Apply a policy such as `[Authorize(Policy = ScopePolicies.FilesRead)]` on each corresponding controller action. The fallback authorization policy requires authentication for all endpoints unless explicitly marked `[AllowAnonymous]`.
 
-This static-key mode is a foundation for trusted server-to-server use. It currently uses one configured key/scope set; per-client API client registration, hashed client-secret storage, rotation/revocation, and OAuth 2.0 client credentials are not implemented. The browser administrator session is separate from this API-key mode. Do not use this API key as a browser login credential.
+The static key remains available for backward compatibility. Managed API clients can be created from /dashboard/api-clients; each receives a server-generated client ID and high-entropy secret. The database stores only the SHA-256 hash of the secret. The full key is shown only on creation or rotation and is sent in the X-Content-Management-Key header in the form cm_<client-id>.<secret>. Each managed client has its own file/JSON scopes. Disabled or deleted clients are rejected on subsequent requests. The browser administrator session is separate from API client credentials. This feature uses managed opaque API keys, not OAuth 2.0 Client Credentials; OAuth token issuance remains a future enhancement.
 
 ## Administrator email OTP login
 
@@ -171,4 +171,15 @@ Pending migrations are applied automatically during server startup. Before deplo
 
 ## Administrator dashboard
 
-After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module is available on the `feature/file-management-crud` branch and provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. API clients and JSON management remain placeholders. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
+After a successful email OTP sign-in, the client navigates to `/dashboard`. The dashboard verifies the administrator session through `GET /api/auth/me` and redirects unauthenticated visitors to the sign-in page. It provides the workspace overview and navigation layout for API clients, files, and JSON documents. The Files module provides a paginated file list, upload, metadata display, rename, soft-delete, and browser-native previews for supported image/PDF/video types plus small text files. JSON management supports listing, searching, validation, create, update, and permanent delete. API client management supports create/list/update/disable/secret rotation/delete and per-client file/JSON scopes. The Setup page is dedicated to stale-file cleanup policy. SMTP is configured through server-side appsettings or environment variables.
+
+
+## Managed API client administration
+
+Administrators can use /dashboard/api-clients to create, list, edit, disable, rotate, and delete API clients. Available scopes are files.read, files.write, files.delete, json.read, json.write, and json.delete. Assign only the scopes required by each integration.
+
+A new client receives an API key in the form cm_<client-id>.<secret>. Store the complete key in the consuming application's server-side secret store; it cannot be retrieved from ContentManagement after the create/rotate response. The database stores a SHA-256 hash of the randomly generated 256-bit secret, not the plaintext secret. Rotating the secret invalidates the previous key immediately. Disabling or deleting a client also prevents future authentication.
+
+Managed API clients are authenticated through the existing X-Content-Management-Key header. The configured static API key remains supported for backward compatibility and continues to use its configured scope set. Managed API client scopes are enforced by the same file and JSON authorization policies. Client management endpoints require the administrator cookie and are not available to API-key callers.
+
+This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
