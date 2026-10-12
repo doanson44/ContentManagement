@@ -19,31 +19,17 @@ public sealed class StaleFileCleanupJob(
         if (settings is null)
             return;
 
-        if (settings.LastCleanupUtc is not null &&
-            now - settings.LastCleanupUtc.Value < TimeSpan.FromHours(settings.CleanupIntervalHours))
-            return;
-
         settings.LastCleanupUtc = now;
-        var staleBefore = now.AddDays(-settings.StaleFileAgeDays);
-        var staleFiles = await db.Files
-            .Where(file => file.Status == ContentStatus.Active && file.CreatedUtc <= staleBefore)
-            .OrderBy(file => file.CreatedUtc)
-            .Take(500)
-            .ToListAsync(cancellationToken);
-
-        foreach (var file in staleFiles)
-        {
-            file.Status = ContentStatus.MarkedForDeletion;
-            file.UpdatedUtc = now;
-        }
-        await db.SaveChangesAsync(cancellationToken);
-
-        var deletionBefore = now.AddDays(-settings.DeletionGracePeriodDays);
+        var deletionBefore = now.AddDays(-settings.StaleFileAgeDays);
         var readyForDeletion = await db.Files
-            .Where(file => (file.Status == ContentStatus.MarkedForDeletion || file.Status == ContentStatus.Deleting) && file.UpdatedUtc <= deletionBefore)
+            .Where(file =>
+                (file.Status == ContentStatus.MarkedForDeletion || file.Status == ContentStatus.Deleting) &&
+                file.UpdatedUtc <= deletionBefore)
             .OrderBy(file => file.UpdatedUtc)
             .Take(100)
             .ToListAsync(cancellationToken);
+
+        await db.SaveChangesAsync(cancellationToken);
 
         var deletedCount = 0;
         foreach (var file in readyForDeletion)
@@ -69,8 +55,8 @@ public sealed class StaleFileCleanupJob(
             }
         }
 
-        if (staleFiles.Count > 0 || deletedCount > 0)
-            logger.LogInformation("Stale file cleanup marked {MarkedCount} files and deleted {DeletedCount} files.",
-                staleFiles.Count, deletedCount);
+        if (readyForDeletion.Count > 0)
+            logger.LogInformation("Stale file cleanup deleted {DeletedCount} of {EligibleCount} eligible marked files.",
+                deletedCount, readyForDeletion.Count);
     }
 }
