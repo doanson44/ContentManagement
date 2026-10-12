@@ -72,7 +72,7 @@ else
                             else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
                             else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
                         </div>
-                        <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd></dl>
+                        <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>File path</dt><dd class="hash-value">@_selected.FilePath</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd></dl>
                         <button class="files-secondary" @onclick="OpenRename" disabled="@_busy">Edit display name</button>
                         <a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download original</a></div>
                     }
@@ -294,6 +294,6 @@ else
     private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
     private sealed record SessionResponse(string Email, string? Role);
     private sealed record FileListResponse(List<FileItem> Items,long Total,int Page,int PageSize);
-    private sealed record FileItem(Guid Id,string FileName,string ContentType,long SizeBytes,string Sha256,string Status,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion);
+    private sealed record FileItem(Guid Id,string FileName,string FilePath,string ContentType,long SizeBytes,string Sha256,string Status,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion);
     private sealed class RenameModel { public string FileName {get;set;}=""; }
 }
