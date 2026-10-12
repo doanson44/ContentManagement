@@ -109,6 +109,12 @@ public sealed class FilesController(
                     }
 
                     var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer);
+                    if (string.IsNullOrWhiteSpace(externalEntity.FileName) || externalEntity.FileName.Length > 255)
+                    {
+                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, cancellationToken); }
+                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary for invalid file metadata."); }
+                        return BadRequest(new { message = "Invalid file name." });
+                    }
                     try
                     {
                         db.Files.Add(externalEntity);
