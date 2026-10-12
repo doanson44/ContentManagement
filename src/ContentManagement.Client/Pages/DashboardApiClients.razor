@@ -33,8 +33,15 @@ else if (_signedIn)
                 <section class="setup-card">
                     <h2>Copy the new API key now</h2>
                     <p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
-                    <textarea rows="3" readonly>@_newApiKey</textarea>
-                    <div class="setup-actions"><button class="setup-primary" @onclick="DismissSecret">I have stored the key</button></div>
+                    <div class="api-key-copy-row">
+                        <textarea class="api-key-value" rows="3" readonly aria-label="New API key">@_newApiKey</textarea>
+                        <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy to clipboard</button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_copyMessage))
+                    {
+                        <p class="api-key-copy-status" role="status">@_copyMessage</p>
+                    }
+                    <div class="setup-actions"><button class="files-secondary" @onclick="DismissSecret">I have stored the key</button></div>
                 </section>
             }
 
@@ -141,6 +148,7 @@ else
     private string _name = "";
     private string _message = "";
     private string _newApiKey = "";
+    private string _copyMessage = "";
     private HashSet<string> _scopes = new(StringComparer.Ordinal);
     private List<ApiClientItem> _clients = [];
     private ApiClientItem? _selected;
@@ -332,7 +340,28 @@ else
         _isActive = true;
     }
 
-    private void DismissSecret() => _newApiKey = "";
+    private async Task CopyApiKeyAsync()
+    {
+        if (string.IsNullOrEmpty(_newApiKey)) return;
+
+        try
+        {
+            var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", _newApiKey);
+            _copyMessage = copied
+                ? "API key copied to clipboard."
+                : "Automatic copy is unavailable in this HTTP browser context. Select the key text and copy it manually.";
+        }
+        catch (Microsoft.JSInterop.JSException)
+        {
+            _copyMessage = "Automatic copy failed. Select the key text and copy it manually.";
+        }
+    }
+
+    private void DismissSecret()
+    {
+        _newApiKey = "";
+        _copyMessage = "";
+    }
 
     private static string ScopeDescription(string scope) => scope switch
     {
