@@ -672,3 +672,101 @@ a.files-upload-button,
         min-height: 40px;
     }
 }
+
+
+/* Dark-theme consistency for responsive table cards and remaining shared UI.
+   Use the existing theme tokens so mobile-only layouts never reintroduce light
+   surfaces from the original table styles. */
+.files-table tbody tr,
+.users-table tbody tr,
+.json-page .files-table tbody tr {
+    background: var(--cm-surface);
+    border-color: var(--cm-border);
+    color: var(--cm-text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+}
+
+.files-table tbody td,
+.users-table tbody td,
+.json-page .files-table tbody td {
+    border-bottom-color: var(--cm-border);
+    color: var(--cm-text);
+}
+
+.files-table tbody td::before,
+.users-table tbody td::before,
+.json-page .files-table tbody td::before {
+    color: var(--cm-muted);
+}
+
+.files-table tbody td:last-child,
+.users-table tbody td:last-child,
+.json-page .files-table tbody td:last-child {
+    border-bottom-color: transparent;
+}
+
+.files-table tbody tr.selected {
+    background: #202d45;
+    border-color: var(--cm-primary);
+}
+
+.files-table .files-name,
+.files-table .files-name strong,
+.files-table .files-name small,
+.files-table code,
+.users-table code {
+    color: var(--cm-text);
+}
+
+.files-table .files-name small {
+    color: var(--cm-muted);
+}
+
+.api-key-value {
+    background: var(--cm-bg);
+    color: var(--cm-text);
+    border-color: var(--cm-border-strong);
+    color-scheme: dark;
+}
+
+.api-key-copy-status {
+    color: var(--cm-success);
+}
+
+.files-table .file-status,
+.users-table .status-active {
+    background: #123326;
+    color: var(--cm-success);
+}
+
+.users-table .status-invited {
+    background: #342514;
+    color: #fdb022;
+}
+
+.users-table .status-disabled {
+    background: var(--cm-surface-raised);
+    color: var(--cm-muted);
+}
+
+@media (max-width: 640px) {
+    .files-table tbody tr,
+    .users-table tbody tr,
+    .json-page .files-table tbody tr {
+        background: var(--cm-surface);
+    }
+
+    .files-table .json-row-actions button,
+    .files-table .api-client-row-actions button {
+        background: var(--cm-surface-raised);
+        color: var(--cm-text);
+        border-color: var(--cm-border-strong);
+    }
+
+    .files-table .json-row-actions .files-danger,
+    .files-table .api-client-row-actions .files-danger {
+        background: #3b1c20;
+        color: var(--cm-danger);
+        border-color: #74333a;
+    }
+}
