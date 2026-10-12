@@ -75,7 +75,6 @@ else if (_signedIn)
                     @if (_selected is not null)
                     {
                         <button class="files-secondary" @onclick="RotateSecretAsync" disabled="@_busy">Rotate secret</button>
-                        <button class="files-danger" @onclick="() => _confirmDelete = true" disabled="@_busy">Delete client</button>
                         <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                     }
                 </div>
@@ -102,7 +101,10 @@ else if (_signedIn)
                                         <td><code>@client.ClientId</code></td>
                                         <td>@string.Join(", ", client.Scopes)</td>
                                         <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
-                                        <td><button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button></td>
+                                        <td class="api-client-row-actions">
+                                            <button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button>
+                                            <button class="files-danger" @onclick="() => ConfirmDelete(client)" disabled="@_busy">Delete</button>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -297,6 +299,17 @@ else
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
         finally { _busy = false; }
+    }
+
+    private void ConfirmDelete(ApiClientItem client)
+    {
+        _selected = client;
+        _name = client.Name;
+        _scopes = new HashSet<string>(client.Scopes, StringComparer.Ordinal);
+        _isActive = client.IsActive;
+        _message = "";
+        _confirmDelete = true;
+        _formOpen = false;
     }
 
     private void Edit(ApiClientItem client)
