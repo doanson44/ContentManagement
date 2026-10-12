@@ -209,6 +209,11 @@ public sealed class FilesController(
             return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
+        catch (HttpRequestException exception)
+        {
+            logger.LogError(exception, "External File API content read failed for file {FileId}.", id);
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = "External file storage is unavailable." });
+        }
     }
 
     [HttpGet("{id:guid}/preview")]
