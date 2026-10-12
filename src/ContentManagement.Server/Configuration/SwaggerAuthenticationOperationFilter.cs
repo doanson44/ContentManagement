@@ -20,11 +20,11 @@ public sealed class SwaggerAuthenticationOperationFilter : IOperationFilter
         operation.Security ??= [];
         operation.Security.Add(new OpenApiSecurityRequirement
         {
-            [new OpenApiSecuritySchemeReference("ApiKey")] = Array.Empty<string>()
+            [new OpenApiSecuritySchemeReference("ApiKey")] = new List<string>()
         });
         operation.Security.Add(new OpenApiSecurityRequirement
         {
-            [new OpenApiSecuritySchemeReference("AdminCookie")] = Array.Empty<string>()
+            [new OpenApiSecuritySchemeReference("AdminCookie")] = new List<string>()
         });
     }
 }
