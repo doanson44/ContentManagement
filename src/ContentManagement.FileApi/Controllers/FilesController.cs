@@ -106,4 +106,21 @@ public sealed class FilesController(
             return BadRequest(new { message = exception.Message });
         }
     }
+    /// <summary>Deletes a file by its relative storage path. Repeated deletes are safe.</summary>
+    [HttpDelete]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult Delete([FromQuery] string filePath)
+    {
+        try
+        {
+            storage.Delete(filePath);
+            return NoContent();
+        }
+        catch (InvalidDataException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+    }
+
 }
