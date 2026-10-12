@@ -25,6 +25,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             var enumType = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
             var converterType = typeof(EnumToStringConverter<>).MakeGenericType(enumType);
             property.SetValueConverter((ValueConverter)Activator.CreateInstance(converterType)!);
+            property.SetMaxLength(32);
         }
 
         modelBuilder.Entity<SystemSettings>(entity =>
