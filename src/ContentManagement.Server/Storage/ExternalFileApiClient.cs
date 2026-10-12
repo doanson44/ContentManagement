@@ -119,5 +119,6 @@ public sealed class ExternalFileApiClient(
         return uri.ToString().TrimEnd('/');
     }
 
-    private sealed record ExternalStoredFile(string FilePath, long SizeBytes, string Sha256);\n    public sealed record ExternalFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
+    private sealed record ExternalStoredFile(string FilePath, long SizeBytes, string Sha256);
+    public sealed record ExternalFileInventoryItem(string FilePath, DateTime LastWriteTimeUtc, long SizeBytes);
 }
