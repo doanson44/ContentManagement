@@ -163,9 +163,10 @@ public sealed class FfmpegVideoPreviewService(
                 {
                     await process.WaitForExitAsync(timeout.Token);
                 }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    if (cancellationToken.IsCancellationRequested) throw;
                     throw new TimeoutException("WMV preview conversion exceeded the two-minute limit.");
                 }
 
