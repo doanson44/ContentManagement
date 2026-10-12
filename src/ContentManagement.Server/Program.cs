@@ -55,6 +55,8 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddScoped<ExternalFileApiClient>();
+builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ContentManagement", "DataProtectionKeys")));
 
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
