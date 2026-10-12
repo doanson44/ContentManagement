@@ -94,6 +94,26 @@ public sealed class JsonDocumentsController(
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity, request.Json));
     }
 
+    [HttpGet("by-code/{code}")]
+    [Authorize(Policy = ScopePolicies.JsonRead)]
+    public async Task<ActionResult<JsonDocumentDetails>> GetByCode(string code, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length > 100)
+            return BadRequest(new { message = "Code is required and must not exceed 100 characters." });
+
+        var normalizedCode = code.Trim();
+        var entity = await db.JsonDocuments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Code == normalizedCode, cancellationToken);
+        if (entity is null || entity.Status is ContentStatus.MarkedForDeletion or ContentStatus.Deleting or ContentStatus.Deleted)
+            return NotFound();
+
+        try { return Ok(ToDetails(entity, compressor.DecompressJson(entity.CompressedPayload))); }
+        catch (System.Text.Json.JsonException)
+        {
+            return Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Stored JSON is corrupted.");
+        }
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Policy = ScopePolicies.JsonRead)]
     public async Task<ActionResult<JsonDocumentDetails>> Get(Guid id, CancellationToken cancellationToken)
