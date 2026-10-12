@@ -1,0 +1,321 @@
+@page "/dashboard/api-clients"
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>API clients · ContentManagement</PageTitle>
+
+@if (_loading)
+{
+    <div class="dashboard-loading">Loading API clients…</div>
+}
+else if (_signedIn)
+{
+    <div class="dashboard-page dashboard-page-no-sidebar">
+        <main class="dashboard-main setup-main">
+            <header class="dashboard-header">
+                <div>
+                    <p class="dashboard-eyebrow">INTEGRATION MANAGEMENT</p>
+                    <h1>API clients</h1>
+                    <p class="dashboard-subtitle">Create credentials and grant only the file and JSON permissions each integration requires.</p>
+                </div>
+                <a class="files-secondary" href="/dashboard">Dashboard</a>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="setup-notice @(_isError ? "error" : "success")" role="status">@_message</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_newApiKey))
+            {
+                <section class="setup-card">
+                    <h2>Copy the new API key now</h2>
+                    <p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
+                    <textarea rows="3" readonly>@_newApiKey</textarea>
+                    <div class="setup-actions"><button class="setup-primary" @onclick="DismissSecret">I have stored the key</button></div>
+                </section>
+            }
+
+            <section class="setup-card">
+                <div class="setup-section-heading">
+                    <div class="setup-section-icon cleanup-setup-icon">+</div>
+                    <div><h2>@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
+                </div>
+                <div class="setup-form-grid">
+                    <label>Client name<input maxlength="100" @bind="_name" disabled="@_busy" placeholder="e.g. Storefront backend" /></label>
+                </div>
+                <h3>Permissions</h3>
+                <div class="setup-form-grid">
+                    @foreach (var scope in AvailableScopes)
+                    {
+                        <label class="api-scope-option" @key="scope">
+                            <span><input type="checkbox" checked="@_scopes.Contains(scope)" @onchange="e => ToggleScope(scope, e)" disabled="@_busy" /> @scope</span>
+                            <small>@ScopeDescription(scope)</small>
+                        </label>
+                    }
+                </div>
+                @if (_selected is not null)
+                {
+                    <label class="api-client-active"><input type="checkbox" @bind="_isActive" disabled="@_busy" /> Client enabled</label>
+                }
+                <div class="setup-actions">
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">@(_selected is null ? "Create client" : "Save changes")</button>
+                    @if (_selected is not null)
+                    {
+                        <button class="files-secondary" @onclick="RotateSecretAsync" disabled="@_busy">Rotate secret</button>
+                        <button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Delete client</button>
+                        <button class="files-secondary" @onclick="ResetForm" disabled="@_busy">Cancel edit</button>
+                    }
+                </div>
+            </section>
+
+            <section class="setup-card">
+                <div class="setup-section-heading"><div><h2>Registered clients</h2><p>@_clients.Count clients loaded</p></div><button class="files-secondary" @onclick="LoadAsync" disabled="@_busy">Refresh</button></div>
+                @if (_clients.Count == 0)
+                {
+                    <p>No API clients registered yet.</p>
+                }
+                else
+                {
+                    <div class="files-table-wrap">
+                        <table class="files-table">
+                            <thead><tr><th>Name</th><th>Client ID</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody>
+                                @foreach (var client in _clients)
+                                {
+                                    <tr @key="client.Id">
+                                        <td><strong>@client.Name</strong><small>@client.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
+                                        <td><code>@client.ClientId</code></td>
+                                        <td>@string.Join(", ", client.Scopes)</td>
+                                        <td>@(client.IsActive ? "Enabled" : "Disabled")</td>
+                                        <td><button class="files-secondary" @onclick="() => Edit(client)" disabled="@_busy">Edit</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+            <footer class="dashboard-footer">ContentManagement <span>·</span> API client management</footer>
+        </main>
+    </div>
+}
+else
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting to sign in…</div>
+}
+
+@code {
+    private static readonly string[] AvailableScopes =
+    [
+        "files.read", "files.write", "files.delete",
+        "json.read", "json.write", "json.delete"
+    ];
+
+    private bool _loading = true;
+    private bool _signedIn;
+    private bool _busy;
+    private bool _isError;
+    private bool _isActive = true;
+    private string _name = "";
+    private string _message = "";
+    private string _newApiKey = "";
+    private HashSet<string> _scopes = new(StringComparer.Ordinal);
+    private List<ApiClientItem> _clients = [];
+    private ApiClientItem? _selected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/auth/me");
+            if (!response.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
+            _signedIn = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(session?.Email);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _loading = false; }
+
+        if (!_signedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        try
+        {
+            using var response = await Http.GetAsync("api/admin/api-clients");
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage("Unable to load API clients.", true);
+                return;
+            }
+
+            _clients = await response.Content.ReadFromJsonAsync<List<ApiClientItem>>() ?? [];
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        if (string.IsNullOrWhiteSpace(_name) || _name.Trim().Length > 100)
+        {
+            SetMessage("Enter a client name of 1–100 characters.", true);
+            return;
+        }
+        if (_scopes.Count == 0)
+        {
+            SetMessage("Select at least one permission scope.", true);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            HttpResponseMessage response;
+            if (_selected is null)
+                response = await Http.PostAsJsonAsync("api/admin/api-clients", new SaveRequest(_name.Trim(), _scopes.ToArray()));
+            else
+                response = await Http.PutAsJsonAsync($"api/admin/api-clients/{_selected.Id}",
+                    new UpdateRequest(_name.Trim(), _scopes.ToArray(), _isActive, _selected.RowVersion));
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    SetMessage(response.StatusCode == System.Net.HttpStatusCode.Conflict
+                        ? "This API client changed. Refresh and retry."
+                        : $"Unable to save API client (HTTP {(int)response.StatusCode}).", true);
+                    return;
+                }
+
+                if (_selected is null)
+                {
+                    var created = await response.Content.ReadFromJsonAsync<CreateResponse>();
+                    _newApiKey = created?.ApiKey ?? "";
+                }
+                SetMessage(_selected is null ? "API client created." : "API client updated.", false);
+                ResetForm();
+                await LoadAsync();
+            }
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task RotateSecretAsync()
+    {
+        if (_selected is null || _busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PostAsync($"api/admin/api-clients/{_selected.Id}/rotate-secret", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage("Unable to rotate the API client secret.", true);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<CreateResponse>();
+            _newApiKey = result?.ApiKey ?? "";
+            SetMessage("Secret rotated. The previous key is now invalid.", false);
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_selected is null || _busy) return;
+        var confirmed = await JSConfirmAsync($"Permanently delete API client '{_selected.Name}'? Its key will stop working immediately.");
+        if (!confirmed) return;
+
+        _busy = true;
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/admin/api-clients/{_selected.Id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage("Unable to delete API client.", true);
+                return;
+            }
+
+            ResetForm();
+            SetMessage("API client deleted.", false);
+            await LoadAsync();
+        }
+        catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
+        finally { _busy = false; }
+    }
+
+    [Microsoft.AspNetCore.Components.Inject]
+    private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+
+    private async Task<bool> JSConfirmAsync(string message) => await JS.InvokeAsync<bool>("confirm", message);
+
+    private void Edit(ApiClientItem client)
+    {
+        _selected = client;
+        _name = client.Name;
+        _scopes = new HashSet<string>(client.Scopes, StringComparer.Ordinal);
+        _isActive = client.IsActive;
+        _message = "";
+    }
+
+    private void ToggleScope(string scope, Microsoft.AspNetCore.Components.ChangeEventArgs args)
+    {
+        if (args.Value is bool selected && selected) _scopes.Add(scope);
+        else _scopes.Remove(scope);
+    }
+
+    private void ResetForm()
+    {
+        _selected = null;
+        _name = "";
+        _scopes = new HashSet<string>(StringComparer.Ordinal);
+        _isActive = true;
+    }
+
+    private void DismissSecret() => _newApiKey = "";
+
+    private static string ScopeDescription(string scope) => scope switch
+    {
+        "files.read" => "List file metadata and download file content.",
+        "files.write" => "Upload files and rename file metadata.",
+        "files.delete" => "Mark files for deletion.",
+        "json.read" => "List and read JSON documents.",
+        "json.write" => "Create and update JSON documents.",
+        "json.delete" => "Permanently delete JSON documents.",
+        _ => ""
+    };
+
+    private void SetMessage(string message, bool error) { _message = message; _isError = error; }
+
+    private sealed record SessionResponse(string? Email, string? Role);
+    private sealed record SaveRequest(string Name, string[] Scopes);
+    private sealed record UpdateRequest(string Name, string[] Scopes, bool IsActive, string RowVersion);
+    private sealed record ApiClientItem(Guid Id, string ClientId, string Name, string[] Scopes, bool IsActive,
+        DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+    private sealed record CreateResponse(ApiClientItem Client, string ApiKey);
+}
