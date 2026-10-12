@@ -4,7 +4,8 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 
 ## Implemented foundation
 
-- Exactly two application projects: `ContentManagement.Client` and `ContentManagement.Server`.
+- The hosted web application consists of `ContentManagement.Client` and `ContentManagement.Server`.
+- `ContentManagement.FileApi` is a separate, standalone filesystem API process. It does not reference the web server project and does not use a database.
 - Server-hosted Blazor WebAssembly static assets and client-side routing.
 - EF Core SQL Server context and initial migration for binary metadata and compressed JSON records.
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
@@ -17,6 +18,29 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
+
+## Standalone File API
+
+`ContentManagement.FileApi` is an independent ASP.NET Core API with no database dependency. It stores files under `FileApi:RootPath` and accepts only relative `filePath` values; absolute paths, traversal segments, invalid segments, and symlink/reparse-point paths are rejected. Uploads never overwrite an existing path. The default upload limit is 100 MiB and is enforced while copying to a temporary file; the file is atomically moved into place after the upload succeeds. The API returns the file size and SHA-256 digest.
+
+Endpoints:
+
+- `GET /health` — anonymous health check.
+- `PUT /api/files?filePath=relative/path.ext` — multipart upload with a form field named `file` and a relative `filePath` query parameter.
+- `GET /api/files/download?filePath=relative/path.ext` — download as an attachment.
+- `GET /api/files/view?filePath=relative/path.ext` — inline view for safe image, PDF, audio, video, plain-text, and CSV types. HTML, SVG, and unknown file types are not rendered inline.
+- `GET /swagger` — Swagger UI with an `Authorize` button for the static API key.
+
+Configure the storage root and secret through environment variables (PowerShell example):
+
+```powershell
+$env:FileApi__RootPath = "D:\\ContentManagement\\files"
+$env:FileApi__MaxUploadBytes = "104857600"
+$env:Authentication__ApiKey = "<generate-a-random-secret-at-least-32-characters-long>"
+dotnet run --project src/ContentManagement.FileApi/ContentManagement.FileApi.csproj
+```
+
+The secret is intentionally blank in committed `appsettings.json`; the API fails at startup if `Authentication:ApiKey` is missing or shorter than 32 characters. Swagger sends the key in the `X-API-Key` header. Keep the API behind HTTPS, restrict network access to trusted clients, and grant the service account access only to the configured storage directory. Configure `FileApi:RootPath` to a dedicated directory, not a directory containing application files or secrets.
 
 ## WMV browser previews
 
