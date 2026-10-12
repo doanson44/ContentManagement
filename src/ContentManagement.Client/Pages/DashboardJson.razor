@@ -45,9 +45,9 @@ else
                         @foreach (var item in _items)
                         {
                             <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id">
-                                <td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.Code</strong><small>@item.DocumentType · @item.Id</small></span></button></td>
-                                <td>@FormatSize(item.UncompressedSizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
-                                <td class="json-row-actions">
+                                <td data-label="Document"><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">{ }</span><span><strong>@item.Code</strong><small>@item.DocumentType · @item.Id</small></span></button></td>
+                                <td data-label="Size">@FormatSize(item.UncompressedSizeBytes)</td><td data-label="Status"><span class="file-status">@item.Status</span></td><td data-label="Updated">@item.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td data-label="Actions" class="json-row-actions">
                                     <button class="files-secondary" @onclick="() => SelectAsync(item)" disabled="@_busy">Edit</button>
                                     <button class="files-danger" @onclick="() => ConfirmDelete(item)" disabled="@_busy">Delete</button>
                                 </td>
