@@ -45,8 +45,9 @@ public sealed class StaleFileCleanupJob(
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 logger.LogError(exception, "Failed to clean stale file {FileId}; it will be retried after the file-age threshold.", file.Id);
+                // Keep UpdatedUtc unchanged: once the grace period has elapsed, a failed
+                // cleanup should be retried on the next scheduled run, not wait another full period.
                 file.Status = ContentStatus.MarkedForDeletion;
-                file.UpdatedUtc = DateTime.UtcNow;
                 db.Entry(file).State = EntityState.Modified;
                 await db.SaveChangesAsync(cancellationToken);
             }
