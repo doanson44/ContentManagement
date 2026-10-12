@@ -106,6 +106,17 @@ public sealed class FilesController(
             return BadRequest(new { message = exception.Message });
         }
     }
+    /// <summary>Lists binary files older than the supplied UTC cutoff for orphan reconciliation.</summary>
+    [HttpGet("inventory")]
+    [ProducesResponseType<IReadOnlyList<StoredFileInventoryItem>>(StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<StoredFileInventoryItem>> Inventory([FromQuery] DateTime olderThanUtc)
+    {
+        if (olderThanUtc == default || olderThanUtc.Kind == DateTimeKind.Local)
+            return BadRequest(new { message = "olderThanUtc must be a UTC timestamp." });
+
+        return Ok(storage.ListFiles(DateTime.SpecifyKind(olderThanUtc, DateTimeKind.Utc)));
+    }
+
     /// <summary>Deletes a file by its relative storage path. Repeated deletes are safe.</summary>
     [HttpDelete]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
