@@ -17,6 +17,7 @@ namespace ContentManagement.Server.Controllers;
 public sealed class FilesController(
     ContentManagementDbContext db,
     IFileStorage storage,
+    IVideoPreviewService videoPreviewService,
     IOptions<ContentManagementOptions> options,
     ILogger<FilesController> logger) : ControllerBase
 {
@@ -125,6 +126,34 @@ public sealed class FilesController(
             return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
+    }
+
+    [HttpGet("{id:guid}/preview")]
+    [Authorize(Policy = ScopePolicies.FilesRead)]
+    public async Task<IActionResult> Preview(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        if (file is null || file.Status != ContentStatus.Active) return NotFound();
+
+        if (!Path.GetExtension(file.FileName).Equals(".wmv", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Transcoded preview is only available for WMV files." });
+
+        try
+        {
+            var previewPath = await videoPreviewService.GetWmvPreviewPathAsync(file.StorageKey, file.Sha256, cancellationToken);
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return PhysicalFile(previewPath, "video/mp4", enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException) { return NotFound(); }
+        catch (TimeoutException)
+        {
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new { message = "WMV preview conversion exceeded the time limit." });
+        }
+        catch (InvalidOperationException exception)
+        {
+            logger.LogWarning(exception, "WMV preview unavailable for file {FileId}.", id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "WMV preview is unavailable. Check FFmpeg installation and server configuration." });
+        }
     }
 
     [HttpGet("{id:guid}/download")]
