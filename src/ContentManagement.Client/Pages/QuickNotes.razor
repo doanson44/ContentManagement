@@ -384,7 +384,6 @@
     {
         _disposed = true;
         CancelPendingSave();
-        _saveGate.Dispose();
         return ValueTask.CompletedTask;
     }
 
