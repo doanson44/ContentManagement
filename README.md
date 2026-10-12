@@ -108,6 +108,10 @@ docker compose -f Docker/docker-compose.integration.yml down --volumes
 
 Use a local-only test password and do not commit credentials. CI uses a disposable SQL Server container and a CI-only password.
 
+## Swagger / OpenAPI
+
+In the Development environment, the server exposes the interactive Swagger UI at `/swagger` and the OpenAPI JSON at `/swagger/v1/swagger.json`. Swagger is disabled outside Development by default to avoid publishing the API surface in production. The document describes both supported authentication alternatives for protected operations: the `X-Content-Management-Key` API-key header and the administrator session cookie. API-key calls still require the relevant file/JSON scope; never enter production secrets on an untrusted machine or embed keys in the Blazor WebAssembly client.
+
 ## Run the application
 
 Set `Authentication__ApiKey` and then run:
