@@ -10,6 +10,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<JsonDocumentRecord> JsonDocuments => Set<JsonDocumentRecord>();
     public DbSet<AdminOtpChallenge> AdminOtpChallenges => Set<AdminOtpChallenge>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
+    public DbSet<ApiClient> ApiClients => Set<ApiClient>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +32,20 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.Property(challenge => challenge.CodeHash).HasMaxLength(64).IsRequired();
             entity.HasIndex(challenge => new { challenge.Email, challenge.CreatedUtc });
             entity.HasIndex(challenge => new { challenge.Email, challenge.ConsumedUtc, challenge.ExpiresUtc });
+        });
+
+        modelBuilder.Entity<ApiClient>(entity =>
+        {
+            entity.ToTable("ApiClients");
+            entity.HasKey(client => client.Id);
+            entity.Property(client => client.Id).ValueGeneratedNever();
+            entity.Property(client => client.ClientId).HasMaxLength(32).IsRequired();
+            entity.HasIndex(client => client.ClientId).IsUnique();
+            entity.Property(client => client.Name).HasMaxLength(100).IsRequired();
+            entity.Property(client => client.SecretHash).HasMaxLength(64).IsRequired();
+            entity.Property(client => client.ScopesJson).HasMaxLength(1000).IsRequired();
+            entity.HasIndex(client => new { client.IsActive, client.Name });
+            entity.Property(client => client.RowVersion).IsRowVersion();
         });
 
         modelBuilder.Entity<StoredFile>(entity =>
