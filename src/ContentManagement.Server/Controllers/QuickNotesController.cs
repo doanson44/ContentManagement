@@ -19,12 +19,9 @@ public sealed class QuickNotesController(ContentManagementDbContext db) : Contro
         var notes = await db.QuickNotes.AsNoTracking()
             .OrderByDescending(note => note.IsPinned)
             .ThenByDescending(note => note.UpdatedUtc)
-            .Select(note => new QuickNoteResponse(
-                note.Id, note.Title, note.Content, note.IsPinned,
-                note.CreatedUtc, note.UpdatedUtc, Convert.ToBase64String(note.RowVersion)))
             .ToListAsync(cancellationToken);
 
-        return Ok(notes);
+        return Ok(notes.Select(ToResponse).ToList());
     }
 
     [HttpPost]
