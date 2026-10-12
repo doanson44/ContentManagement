@@ -46,10 +46,6 @@ public sealed class AdminSetupController(
             return BadRequest(new { message = "External API URL must be an absolute HTTP or HTTPS URL." });
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
-        var externalFileCount = await db.Files.AsNoTracking().LongCountAsync(
-            file => file.UploadSource == FileUploadSource.ExternalServer && file.Status != ContentStatus.Deleted, cancellationToken);
-        if (externalFileCount > 0 && !string.Equals(settings.ExternalStorageBaseUrl.TrimEnd('/'), endpoint, StringComparison.OrdinalIgnoreCase))
-            return Conflict(new { message = "External API URL cannot be changed while external files exist." });
         if (request.ExternalStoragePreferred && (string.IsNullOrWhiteSpace(endpoint) ||
             (string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) && string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))))
             return BadRequest(new { message = "Configure the External API URL and API key before enabling preference." });
