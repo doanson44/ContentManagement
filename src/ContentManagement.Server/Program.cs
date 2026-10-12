@@ -27,6 +27,31 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .Enrich.WithProperty("Application", "ContentManagement.Server"));
 
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "ContentManagement API",
+        Version = "v1",
+        Description = "Authenticated content storage API. API-key callers must provide the X-Content-Management-Key header with the required scope."
+    });
+    options.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = ApiKeyAuthenticationDefaults.HeaderName,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Server-side API key. Do not place this key in Blazor WebAssembly client code."
+    });
+    options.AddSecurityDefinition("AdminCookie", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "__Host-ContentManagement.Admin",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Description = "Administrator session cookie issued by the OTP sign-in flow."
+    });
+    options.OperationFilter<SwaggerAuthenticationOperationFilter>();
+});
 builder.Services.AddProblemDetails();
 
 builder.Services.AddOptions<ContentManagementOptions>()
@@ -213,6 +238,19 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseHttpsRedirection();
+
+// Keep API documentation out of production deployments by default.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement API v1");
+        options.RoutePrefix = "swagger";
+        options.DocumentTitle = "ContentManagement API";
+    });
+}
+
 app.Use(async (context, next) =>
 {
     var method = context.Request.Method;
