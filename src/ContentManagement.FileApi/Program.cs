@@ -60,7 +60,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseSwagger();
-app.UseSwaggerUI();
+app.UseSwaggerUI(options => options.RoutePrefix = string.Empty);
 app.UseAuthentication();
 app.UseAuthorization();
 
