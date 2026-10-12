@@ -33,7 +33,7 @@ public sealed class SystemSettings
     [MaxLength(500)]
     public string ExternalStorageBaseUrl { get; set; } = "";
 
-    [MaxLength(4096)]
+    [MaxLength(4000)]
     public string ExternalStorageApiKeyProtected { get; set; } = "";
 
     public long ExternalStorageQuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024;
