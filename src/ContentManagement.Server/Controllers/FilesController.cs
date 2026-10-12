@@ -72,7 +72,7 @@ public sealed class FilesController(
         {
             Id = Guid.NewGuid(),
             FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
-            ContentType = SafeContentType(file.ContentType),
+            ContentType = ResolveContentType(file.ContentType, file.FileName),
             StorageKey = binary.StorageKey,
             SizeBytes = binary.SizeBytes,
             Sha256 = binary.Sha256,
@@ -122,7 +122,7 @@ public sealed class FilesController(
             var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
             Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
             Response.Headers["X-Content-Type-Options"] = "nosniff";
-            return File(stream, SafeContentType(file.ContentType), enableRangeProcessing: true);
+            return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
     }
@@ -133,7 +133,7 @@ public sealed class FilesController(
     {
         var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
-        try { return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken), SafeContentType(file.ContentType), file.FileName, enableRangeProcessing: true); }
+        try { return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken), ResolveContentType(file.ContentType, file.FileName), file.FileName, enableRangeProcessing: true); }
         catch (FileNotFoundException) { return NotFound(); }
     }
 
@@ -193,6 +193,33 @@ public sealed class FilesController(
             await db.SaveChangesAsync(cancellationToken);
         }
         return Accepted(new { file.Id, file.Status });
+    }
+
+    private static string ResolveContentType(string? value, string? fileName)
+    {
+        var candidate = value;
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            candidate.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant() switch
+            {
+                ".mp4" => "video/mp4",
+                ".m4v" => "video/mp4",
+                ".webm" => "video/webm",
+                ".ogv" => "video/ogg",
+                ".ogg" => "video/ogg",
+                ".mov" => "video/quicktime",
+                ".mp3" => "audio/mpeg",
+                ".m4a" => "audio/mp4",
+                ".wav" => "audio/wav",
+                ".oga" => "audio/ogg",
+                ".opus" => "audio/ogg",
+                ".vtt" => "text/vtt",
+                _ => candidate
+            };
+        }
+
+        return SafeContentType(candidate);
     }
 
     private static string SafeContentType(string? value)
