@@ -45,12 +45,12 @@ public sealed class FilesController(
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(f => new
             {
-                f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
-                f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
+                f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+                f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
             })
             .ToListAsync(cancellationToken);
-        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion), viewTokens.CreateRelativeUrl(f.Id))).ToList();
+        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+            f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion))).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
@@ -81,6 +81,9 @@ public sealed class FilesController(
             CreatedUtc = now,
             UpdatedUtc = now,
             Status = ContentStatus.Active,
+            UploadSource = User.Identity?.AuthenticationType == ApiKeyAuthenticationDefaults.Scheme
+                ? FileUploadSource.ExternalServer
+                : FileUploadSource.Local,
             OwnerId = User.FindFirst("sub")?.Value
         };
         if (string.IsNullOrWhiteSpace(entity.FileName))
@@ -281,14 +284,14 @@ public sealed class FilesController(
             ? "application/octet-stream" : value;
     }
 
-    private FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.StorageKey, file.ContentType,
-        file.SizeBytes, file.Sha256, file.Status, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
-        Convert.ToBase64String(file.RowVersion), viewTokens.CreateRelativeUrl(file.Id));
+    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.ContentType,
+        file.SizeBytes, file.Sha256, file.Status, file.UploadSource, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
+        Convert.ToBase64String(file.RowVersion));
 
-    public sealed record FileListItem(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
+    public sealed record FileListItem(Guid Id, string FileName, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
-    public sealed record FileDetails(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
+    public sealed record FileDetails(Guid Id, string FileName, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
     public sealed record RenameFileRequest([Required, StringLength(255)] string FileName, string? RowVersion);
 }
