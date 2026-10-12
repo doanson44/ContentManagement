@@ -1,5 +1,6 @@
 using ContentManagement.Server.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ContentManagement.Server.Data;
 
@@ -15,6 +16,16 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Persist every enum property by its stable symbolic name, not its underlying numeric value.
+        foreach (var property in modelBuilder.Model.GetEntityTypes()
+                     .SelectMany(entityType => entityType.GetProperties())
+                     .Where(property => (Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType).IsEnum))
+        {
+            var enumType = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+            var converterType = typeof(EnumToStringConverter<>).MakeGenericType(enumType);
+            property.SetValueConverter((ValueConverter)Activator.CreateInstance(converterType)!);
+        }
 
         modelBuilder.Entity<SystemSettings>(entity =>
         {
@@ -58,7 +69,6 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasIndex(file => new { file.Status, file.CreatedUtc });
             entity.HasIndex(file => file.OwnerId);
             entity.Property(file => file.SizeBytes).HasColumnType("bigint");
-            entity.Property(file => file.Status).HasConversion<int>();
             entity.Property(file => file.RowVersion).IsRowVersion();
         });
 
@@ -72,7 +82,6 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.Property(document => document.CompressedPayload).HasColumnType("varbinary(max)").IsRequired();
             entity.Property(document => document.UncompressedSizeBytes).HasColumnType("bigint");
             entity.Property(document => document.CompressedSizeBytes).HasColumnType("bigint");
-            entity.Property(document => document.Status).HasConversion<int>();
             entity.HasIndex(document => new { document.DocumentType, document.CreatedUtc });
             entity.HasIndex(document => new { document.Status, document.UpdatedUtc });
             entity.HasIndex(document => document.OwnerId);
