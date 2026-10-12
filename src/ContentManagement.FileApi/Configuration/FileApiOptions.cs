@@ -9,6 +9,6 @@ public sealed class FileApiOptions
     [Required]
     public string RootPath { get; set; } = string.Empty;
 
-    [Range(1, 1073741824)]
+    [Range(1, 104857600)]
     public long MaxUploadBytes { get; set; } = 104_857_600;
 }
