@@ -3,6 +3,7 @@ using System.Text;
 using ContentManagement.FileApi.Configuration;
 using ContentManagement.FileApi.Storage;
 using Microsoft.Extensions.Options;
+using Xunit;
 
 namespace ContentManagement.UnitTests.FileApi;
 
