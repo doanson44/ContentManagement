@@ -247,7 +247,12 @@ catch (Exception exception)
 }
 
 app.UseSerilogRequestLogging();
-if (app.Environment.IsDevelopment())
+
+// Keep Swagger enabled in Development; production requires an explicit opt-in.
+// Set Swagger__Enabled=true to expose the Server OpenAPI document in production.
+var swaggerEnabled = app.Environment.IsDevelopment() ||
+    app.Configuration.GetValue<bool>("Swagger:Enabled");
+if (swaggerEnabled)
 {
     app.UseSwagger();
     app.UseSwaggerUI(options =>
