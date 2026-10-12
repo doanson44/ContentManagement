@@ -28,11 +28,16 @@ else if (_signedIn)
                 <div class="setup-notice @(_isError ? "error" : "success")" role="status">@_message</div>
             }
 
-            @if (!string.IsNullOrWhiteSpace(_newApiKey))
+            @if (_formOpen)
             {
-                <section class="setup-card">
-                    <h2>Copy the new API key now</h2>
-                    <p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p>
+            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="setup-card cm-modal" role="dialog" aria-modal="true" aria-labelledby="api-client-form-title" @onclick:stopPropagation="true">
+                @if (!string.IsNullOrWhiteSpace(_newApiKey))
+                {
+                    <div class="setup-section-heading">
+                        <div class="setup-section-icon cleanup-setup-icon">!</div>
+                        <div><h2 id="api-client-form-title">Copy the new API key now</h2><p>This key is shown only once. Store it in the consuming application's server-side secret store. It is not saved in plaintext.</p></div>
+                    </div>
                     <div class="api-key-copy-row">
                         <textarea class="api-key-value" rows="3" readonly aria-label="New API key">@_newApiKey</textarea>
                         <button class="setup-primary api-key-copy-button" @onclick="CopyApiKeyAsync" disabled="@_busy">Copy to clipboard</button>
@@ -41,14 +46,12 @@ else if (_signedIn)
                     {
                         <p class="api-key-copy-status" role="status">@_copyMessage</p>
                     }
-                    <div class="setup-actions"><button class="files-secondary" @onclick="DismissSecret">I have stored the key</button></div>
-                </section>
-            }
-
-            @if (_formOpen)
-            {
-            <div class="cm-modal-backdrop" role="presentation" @onclick="CloseForm">
-            <section class="setup-card cm-modal" role="dialog" aria-modal="true" aria-labelledby="api-client-form-title" @onclick:stopPropagation="true">
+                    <div class="setup-actions">
+                        <button class="setup-primary" @onclick="DismissSecret" disabled="@_busy">I have stored the key</button>
+                    </div>
+                }
+                else
+                {
                 <div class="setup-section-heading">
                     <div class="setup-section-icon cleanup-setup-icon">+</div>
                     <div><h2 id="api-client-form-title">@(_selected is null ? "Create API client" : "Edit API client")</h2><p>Changing scopes takes effect on the next authenticated request. Disabling or deleting a client revokes its key.</p></div>
@@ -78,6 +81,7 @@ else if (_signedIn)
                         <button class="files-secondary" @onclick="CloseForm" disabled="@_busy">Cancel</button>
                     }
                 </div>
+                }
             </section>
             </div>
             }
@@ -240,15 +244,32 @@ else
                     return;
                 }
 
-                if (_selected is null)
+                var creating = _selected is null;
+                if (creating)
                 {
                     var created = await response.Content.ReadFromJsonAsync<CreateResponse>();
-                    _newApiKey = created?.ApiKey ?? "";
+                    if (created is null || string.IsNullOrWhiteSpace(created.ApiKey))
+                    {
+                        SetMessage("API client was created, but the one-time key could not be read. Rotate the secret to generate a new key.", true);
+                        _formOpen = false;
+                        await LoadAsync();
+                        return;
+                    }
+
+                    _newApiKey = created.ApiKey;
+                    _copyMessage = "";
+                    _selected = created.Client;
+                    _name = created.Client.Name;
+                    _scopes = new HashSet<string>(created.Client.Scopes, StringComparer.Ordinal);
+                    _isActive = created.Client.IsActive;
                 }
-                SetMessage(_selected is null ? "API client created." : "API client updated.", false);
-                ResetForm();
-                _formOpen = false;
+                SetMessage(creating ? "API client created." : "API client updated.", false);
                 _confirmDelete = false;
+                if (!creating)
+                {
+                    _formOpen = false;
+                    ResetForm();
+                }
                 await LoadAsync();
             }
         }
