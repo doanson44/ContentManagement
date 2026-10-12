@@ -148,7 +148,7 @@ else
 
     private bool CanAccessFiles => HasAnyPermission("files.read", "files.write", "files.delete");
     private bool CanAccessJson => HasAnyPermission("json.read", "json.write", "json.delete");
-    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
+    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0) + (_isAdministrator ? 1 : 0);
 
     private bool HasAnyPermission(params string[] requiredPermissions) =>
         _isAdministrator || _permissions.Any(permission =>
