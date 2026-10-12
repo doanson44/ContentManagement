@@ -6,6 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
-    <PackageReference Include="Net.IBM.Data.Db2" Version="10.0.0.300" />
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
   </ItemGroup>
 </Project>
