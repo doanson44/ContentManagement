@@ -8,7 +8,9 @@ namespace ContentManagement.FileApi.Storage;
 public sealed record StoredFileInfo(string FilePath, long SizeBytes, string Sha256);
 
 public sealed class FileSizeLimitExceededException(long maximumBytes)
-    : Exception($"File exceeds the configured upload limit of {maximumBytes} bytes.");
+    : Exception($"File exceeds the configured upload limit of {maximumBytes} bytes.)
+{
+}
 
 public sealed class FileStorageService
 {
