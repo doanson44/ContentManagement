@@ -11,44 +11,15 @@
 }
 else if (_signedIn)
 {
-    <div class="dashboard-page">
-        <aside class="dashboard-sidebar">
-            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
-            <p class="sidebar-label">WORKSPACE</p>
-            <a class="sidebar-link active" href="/dashboard"><span>⌂</span> Dashboard</a>
-            <p class="sidebar-label">MANAGEMENT</p>
-            @if (_isAdministrator)
-            {
-                <div class="sidebar-link muted-link"><span>⌘</span> API clients <small>Planned</small></div>
-            }
-            @if (CanAccessFiles)
-            {
-                <a class="sidebar-link" href="/dashboard/files"><span>▤</span> Files</a>
-            }
-            @if (CanAccessJson)
-            {
-                <a class="sidebar-link" href="/dashboard/json"><span>{ }</span> JSON documents</a>
-            }
-            @if (_isAdministrator)
-            {
-                <p class="sidebar-label">SYSTEM</p>
-                <a class="sidebar-link" href="/dashboard/setup"><span>⚙</span> Setup</a>
-            }
-            <div class="sidebar-bottom">
-                <div class="admin-avatar">A</div>
-                <div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div>
-                <button class="logout-button" title="Sign out" @onclick="LogoutAsync" disabled="@_busy">↗</button>
-            </div>
-        </aside>
-
+    <div class="dashboard-page dashboard-page-no-sidebar">
         <main class="dashboard-main">
             <header class="dashboard-header">
                 <div>
                     <p class="dashboard-eyebrow">WORKSPACE OVERVIEW</p>
                     <h1>Dashboard</h1>
-                    <p class="dashboard-subtitle">Manage API access and your content from one place.</p>
+                    <p class="dashboard-subtitle">Access the content modules available to your account.</p>
                 </div>
-                <div class="session-pill"><span></span> Admin session active</div>
+                <div class="session-pill"><span></span> Session active</div>
             </header>
 
             @if (!string.IsNullOrWhiteSpace(_message))
@@ -78,15 +49,6 @@ else if (_signedIn)
             </div>
 
             <section class="module-grid" aria-label="Management modules">
-                @if (_isAdministrator)
-                {
-                    <article class="module-card">
-                        <div class="module-icon api-icon">⌘</div>
-                        <div class="module-card-heading"><h3>API clients</h3><span class="module-status">Planned</span></div>
-                        <p>Register applications, configure client credentials, and rotate or revoke secrets.</p>
-                        <div class="module-footer"><span>Client configuration</span><span class="module-arrow">↗</span></div>
-                    </article>
-                }
                 @if (CanAccessFiles)
                 {
                     <article class="module-card">
@@ -106,7 +68,26 @@ else if (_signedIn)
                     </article>
                 }
             </section>
-            <footer class="dashboard-footer">ContentManagement <span>·</span> Administrator workspace</footer>
+            @if (VisibleModuleCount == 0)
+            {
+                <section class="dashboard-empty" role="status">
+                    <div class="dashboard-empty-icon">⌁</div>
+                    <h2>No modules available</h2>
+                    <p>Your account does not currently have access to any dashboard modules. Contact an administrator if you believe this is incorrect.</p>
+                </section>
+            }
+            @if (_isAdministrator)
+            {
+                <section class="module-grid admin-module-grid" aria-label="Administration">
+                    <article class="module-card">
+                        <div class="module-icon permission-icon">⚙</div>
+                        <div class="module-card-heading"><h3>System setup</h3><span class="module-status">Available</span></div>
+                        <p>Configure stale-file cleanup and deletion grace periods.</p>
+                        <div class="module-footer"><span>System configuration</span><a href="/dashboard/setup">Open ↗</a></div>
+                    </article>
+                </section>
+            }
+            <footer class="dashboard-footer">ContentManagement <span>·</span> Workspace</footer>
         </main>
     </div>
 }
@@ -135,6 +116,7 @@ else
                 var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
                 _email = session?.Email ?? "";
                 _isAdministrator = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal);
+                _permissions = session?.Permissions ?? [];
                 _signedIn = !string.IsNullOrWhiteSpace(_email);
             }
         }
@@ -162,11 +144,17 @@ else
         finally { _busy = false; }
     }
 
-    private bool CanAccessFiles => _isAdministrator;
-    private bool CanAccessJson => _isAdministrator;
-    private int VisibleModuleCount => (_isAdministrator ? 1 : 0) + (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
+    private string[] _permissions = [];
+
+    private bool CanAccessFiles => HasAnyPermission("files.read", "files.write", "files.delete");
+    private bool CanAccessJson => HasAnyPermission("json.read", "json.write", "json.delete");
+    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0);
+
+    private bool HasAnyPermission(params string[] requiredPermissions) =>
+        _isAdministrator || _permissions.Any(permission =>
+            requiredPermissions.Contains(permission, StringComparer.OrdinalIgnoreCase));
 
     private void DismissWelcome() { _showWelcome = false; Navigation.NavigateTo("/dashboard", replace: true); }
 
-    private sealed record SessionResponse(string Email, string? Role);
+    private sealed record SessionResponse(string Email, string? Role, string[]? Permissions = null);
 }
