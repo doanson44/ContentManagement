@@ -1,10 +1,11 @@
+using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Controllers;
 
@@ -13,11 +14,10 @@ namespace ContentManagement.Server.Controllers;
 [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme, Roles = "Administrator")]
 public sealed class AdminSetupController(
     ContentManagementDbContext db,
-    IDataProtectionProvider protectionProvider,
+    IOptions<ExternalStorageOptions> externalStorageOptions,
     ILogger<AdminSetupController> logger) : ControllerBase
 {
-    private readonly IDataProtector _apiKeyProtector =
-        protectionProvider.CreateProtector("ContentManagement.ExternalFileApi.ApiKey.v1");
+    private readonly ExternalStorageOptions _externalStorage = externalStorageOptions.Value;
 
     [HttpGet]
     public async Task<ActionResult<SetupResponse>> Get(CancellationToken cancellationToken)
@@ -28,33 +28,24 @@ public sealed class AdminSetupController(
     }
 
     [HttpPut]
-    public async Task<ActionResult<SetupResponse>> Save([FromBody] UpdateSetupRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<SetupResponse>> Save(
+        [FromBody] UpdateSetupRequest request,
+        CancellationToken cancellationToken)
     {
         if (request.StaleFileAgeDays is < 1 or > 3650)
             return BadRequest(new { message = "File age threshold must be between 1 and 3650 days." });
         if (request.ExternalStorageQuotaBytes < 0)
             return BadRequest(new { message = "External storage quota must be zero or greater." });
-
-        if (!string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) &&
-            (request.ExternalStorageApiKey.Trim().Length < 32 || request.ExternalStorageApiKey.Trim().Length > 1024))
-            return BadRequest(new { message = "External API key must contain between 32 and 1024 characters." });
-
-        var endpoint = request.ExternalStorageBaseUrl?.Trim().TrimEnd('/') ?? "";
-        if (!string.IsNullOrWhiteSpace(endpoint) &&
-            (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
-             (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)))
-            return BadRequest(new { message = "External API URL must be an absolute HTTP or HTTPS URL." });
+        if (request.ExternalStoragePreferred && !_externalStorage.IsConfigured)
+            return BadRequest(new
+            {
+                message = "Configure ExternalStorage:BaseUrl and ExternalStorage:ApiKey in server configuration before enabling external storage."
+            });
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
-        if (request.ExternalStoragePreferred && (string.IsNullOrWhiteSpace(endpoint) ||
-            (string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) && string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))))
-            return BadRequest(new { message = "Configure the External API URL and API key before enabling preference." });
         settings.StaleFileAgeDays = request.StaleFileAgeDays;
-        settings.ExternalStorageBaseUrl = endpoint;
         settings.ExternalStorageQuotaBytes = request.ExternalStorageQuotaBytes;
         settings.ExternalStoragePreferred = request.ExternalStoragePreferred;
-        if (!string.IsNullOrWhiteSpace(request.ExternalStorageApiKey))
-            settings.ExternalStorageApiKeyProtected = _apiKeyProtector.Protect(request.ExternalStorageApiKey.Trim());
         settings.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -82,24 +73,20 @@ public sealed class AdminSetupController(
             .Select(file => (long?)file.SizeBytes)
             .SumAsync(cancellationToken) ?? 0L;
 
-    private static SetupResponse ToResponse(SystemSettings settings, long usedBytes) =>
-        new(settings.StaleFileAgeDays, settings.ExternalStorageBaseUrl,
-            !string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected),
+    private SetupResponse ToResponse(SystemSettings settings, long usedBytes) =>
+        new(settings.StaleFileAgeDays, _externalStorage.IsConfigured,
             settings.ExternalStorageQuotaBytes, usedBytes,
             Math.Max(0, settings.ExternalStorageQuotaBytes - usedBytes),
             settings.ExternalStoragePreferred);
 
     public sealed record UpdateSetupRequest(
         int StaleFileAgeDays,
-        string? ExternalStorageBaseUrl,
-        string? ExternalStorageApiKey,
         long ExternalStorageQuotaBytes,
         bool ExternalStoragePreferred);
 
     public sealed record SetupResponse(
         int StaleFileAgeDays,
-        string ExternalStorageBaseUrl,
-        bool ExternalStorageApiKeyConfigured,
+        bool ExternalStorageConfigured,
         long ExternalStorageQuotaBytes,
         long ExternalStorageUsedBytes,
         long ExternalStorageRemainingBytes,
