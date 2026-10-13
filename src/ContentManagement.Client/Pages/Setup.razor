@@ -17,7 +17,7 @@ else if (_signedIn)
                 <div>
                     <p class="dashboard-eyebrow">SYSTEM CONFIGURATION</p>
                     <h1>Setup</h1>
-                    <p class="dashboard-subtitle">Configure how long files remain marked for deletion before permanent cleanup.</p>
+                    <p class="dashboard-subtitle">Configure cleanup policy and external binary storage usage.</p>
                 </div>
                 <div class="session-pill"><span></span> Session active</div>
             </header>
@@ -72,7 +72,7 @@ else if (_signedIn)
                     </label>
                     <label class="external-preference">
                         <span>Enable external storage</span>
-                        <input type="checkbox" @bind="_model.ExternalStoragePreferred" disabled="@_busy || !_model.ExternalStorageConfigured" />
+                        <input type="checkbox" @bind="_model.ExternalStoragePreferred" disabled="@_busy" />
                         <small>When enabled, new uploads use external storage while quota is available. Otherwise, files are stored locally.</small>
                     </label>
                 </div>
