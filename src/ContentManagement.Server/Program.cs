@@ -92,7 +92,7 @@ builder.Services.AddOptions<AdminAuthOptions>()
     .Validate(options => options.OtpLifetimeMinutes is >= 3 and <= 30)
     .Validate(options => options.MaxVerificationAttempts is >= 3 and <= 10)
     .Validate(options => options.ResendCooldownSeconds is >= 30 and <= 600)
-    .Validate(options => options.SessionLifetimeHours is >= 1 and <= 24)
+    .Validate(options => options.SessionLifetimeHours is >= 1 and <= 720)
     .Validate(options => options.AllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out var parsed) && parsed.Scheme == Uri.UriSchemeHttps),
         "AdminAuth:AllowedOrigins must contain absolute HTTPS origins.")
     .Validate(options => options.AllowedEmails.Length == 0 || options.OtpHashKey.Length >= 32,
@@ -170,7 +170,8 @@ builder.Services.AddAuthentication(options =>
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.Path = "/";
         options.SlidingExpiration = true;
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        // Keep cookie middleware and the issued persistent ticket on the same 30-day sliding lifetime.
+        options.ExpireTimeSpan = TimeSpan.FromHours(builder.Configuration.GetValue<int>("AdminAuth:SessionLifetimeHours", 720));
         options.Events.OnRedirectToLogin = context =>
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
