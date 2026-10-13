@@ -2,30 +2,26 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using ContentManagement.Server.Data;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.EntityFrameworkCore;
+using ContentManagement.Server.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Storage;
 
 /// <summary>Server-to-server client for the standalone ContentManagement.FileApi.</summary>
 public sealed class ExternalFileApiClient(
     IHttpClientFactory httpClientFactory,
-    ContentManagementDbContext db,
-    IDataProtectionProvider protectionProvider)
+    IOptions<ExternalStorageOptions> options)
 {
-    private readonly IDataProtector _protector =
-        protectionProvider.CreateProtector("ContentManagement.ExternalFileApi.ApiKey.v1");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly ExternalStorageOptions _options = options.Value;
 
     public async Task<StoredBinary> UploadAsync(
-        string baseUrl, string protectedApiKey, string filePath, string fileName,
-        Stream content, CancellationToken cancellationToken)
+        string filePath, string fileName, Stream content, CancellationToken cancellationToken)
     {
-        var key = _protector.Unprotect(protectedApiKey);
+        EnsureConfigured();
         using var request = new HttpRequestMessage(HttpMethod.Put,
-            $"{NormalizeBaseUrl(baseUrl)}/api/files?filePath={Uri.EscapeDataString(filePath)}");
-        request.Headers.Add("X-API-Key", key);
+            $"{NormalizeBaseUrl(_options.BaseUrl)}/api/files?filePath={Uri.EscapeDataString(filePath)}");
+        request.Headers.Add("X-API-Key", _options.ApiKey);
         using var multipart = new MultipartFormDataContent();
         var streamContent = new StreamContent(content);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -45,11 +41,10 @@ public sealed class ExternalFileApiClient(
 
     public async Task<HttpResponseMessage> GetFileAsync(string storageKey, CancellationToken cancellationToken)
     {
-        var settings = await GetConfiguredSettingsAsync(cancellationToken);
+        EnsureConfigured();
         var client = httpClientFactory.CreateClient(nameof(ExternalFileApiClient));
         using var request = CreateAuthorizedRequest(HttpMethod.Get,
-            $"{NormalizeBaseUrl(settings.ExternalStorageBaseUrl)}/api/files/download?filePath={Uri.EscapeDataString(storageKey)}",
-            settings.ExternalStorageApiKeyProtected);
+            $"{NormalizeBaseUrl(_options.BaseUrl)}/api/files/download?filePath={Uri.EscapeDataString(storageKey)}");
         var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -68,46 +63,40 @@ public sealed class ExternalFileApiClient(
     public async Task<IReadOnlyList<ExternalFileInventoryItem>> ListConfiguredFilesAsync(
         DateTime olderThanUtc, CancellationToken cancellationToken)
     {
-        var settings = await GetConfiguredSettingsAsync(cancellationToken);
+        EnsureConfigured();
         var client = httpClientFactory.CreateClient(nameof(ExternalFileApiClient));
         using var request = CreateAuthorizedRequest(HttpMethod.Get,
-            $"{NormalizeBaseUrl(settings.ExternalStorageBaseUrl)}/api/files/inventory?olderThanUtc={Uri.EscapeDataString(olderThanUtc.ToUniversalTime().ToString("O"))}",
-            settings.ExternalStorageApiKeyProtected);
+            $"{NormalizeBaseUrl(_options.BaseUrl)}/api/files/inventory?olderThanUtc={Uri.EscapeDataString(olderThanUtc.ToUniversalTime().ToString("O"))}");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<ExternalFileInventoryItem>>(JsonOptions, cancellationToken)
             ?? throw new HttpRequestException("External File API returned an empty inventory response.");
     }
 
-    public async Task DeleteAsync(string baseUrl, string protectedApiKey, string storageKey, CancellationToken cancellationToken)
+    public async Task DeleteAsync(string storageKey, CancellationToken cancellationToken)
     {
+        EnsureConfigured();
         var client = httpClientFactory.CreateClient(nameof(ExternalFileApiClient));
         using var request = CreateAuthorizedRequest(HttpMethod.Delete,
-            $"{NormalizeBaseUrl(baseUrl)}/api/files?filePath={Uri.EscapeDataString(storageKey)}", protectedApiKey);
+            $"{NormalizeBaseUrl(_options.BaseUrl)}/api/files?filePath={Uri.EscapeDataString(storageKey)}");
         using var response = await client.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound) return;
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task DeleteConfiguredFileAsync(string storageKey, CancellationToken cancellationToken)
+    public Task DeleteConfiguredFileAsync(string storageKey, CancellationToken cancellationToken) =>
+        DeleteAsync(storageKey, cancellationToken);
+
+    private void EnsureConfigured()
     {
-        var settings = await GetConfiguredSettingsAsync(cancellationToken);
-        await DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, storageKey, cancellationToken);
+        if (!_options.IsConfigured)
+            throw new InvalidOperationException("External File API is not configured in appsettings or environment configuration.");
     }
 
-    private async Task<ContentManagement.Server.Domain.SystemSettings> GetConfiguredSettingsAsync(CancellationToken cancellationToken)
-    {
-        var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
-        if (settings is null || string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) ||
-            string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))
-            throw new InvalidOperationException("External File API is not configured.");
-        return settings;
-    }
-
-    private HttpRequestMessage CreateAuthorizedRequest(HttpMethod method, string url, string protectedApiKey)
+    private HttpRequestMessage CreateAuthorizedRequest(HttpMethod method, string url)
     {
         var request = new HttpRequestMessage(method, url);
-        request.Headers.Add("X-API-Key", _protector.Unprotect(protectedApiKey));
+        request.Headers.Add("X-API-Key", _options.ApiKey);
         return request;
     }
 
