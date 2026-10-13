@@ -101,7 +101,7 @@ else
                 <section class="cm-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title" @onclick:stopPropagation="true">
                     <h2 id="upload-title">Upload file</h2>
                     <p>Select a file to upload to ContentManagement. Maximum size: 100 MiB.</p>
-                    <InputFile OnChange="UploadAsync" disabled="@_busy" />
+                    <input @ref="_uploadInput" type="file" @onchange="UploadAsync" disabled="@_busy" />
                     @if (_pendingUpload is not null) { <p><strong>@_pendingUpload.Name</strong> · @FormatSize(_pendingUpload.Size)</p> }
                     <div class="setup-actions">
                         <button class="files-secondary" @onclick="CloseUpload" disabled="@_busy">Cancel</button>
@@ -147,7 +147,11 @@ else
     private bool _uploadOpen, _renameOpen, _confirmDelete, _viewUrlOpen;
     private FileItem? _viewUrlItem;
     private string _viewUrl = "";
-    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _pendingUpload;
+    private ElementReference _uploadInput;
+    private UploadFileMetadata? _pendingUpload;
+    private DotNetObjectReference<DashboardFiles>? _uploadProgressReference;
+    private long _uploadBytesSent, _uploadTotalBytes;
+    private int _uploadPercent;
     private string _email = "", _message = "", _subtitleMessage = "", _search = "", _status = "";
     private string? _textPreview, _subtitleUrl;
     private int _page = 1, _pageSize = 25;
@@ -184,42 +188,84 @@ else
             catch(HttpRequestException) { _textPreview="Preview could not be loaded."; }
         }
     }
-    private Task UploadAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs args)
+    private async Task UploadAsync(ChangeEventArgs _)
     {
-        _pendingUpload = args.File;
-        return Task.CompletedTask;
+        _pendingUpload = await JS.InvokeAsync<UploadFileMetadata?>("contentManagementFiles.getSelectedFileMetadata", _uploadInput);
+        _uploadBytesSent = 0;
+        _uploadTotalBytes = _pendingUpload?.Size ?? 0;
+        _uploadPercent = 0;
     }
 
     private void OpenUpload() { _pendingUpload = null; _uploadOpen = true; }
     private void CloseUpload() { if (_busy) return; _uploadOpen = false; _pendingUpload = null; }
 
+    [JSInvokable]
+    public Task ReportUploadProgress(long loaded, long total)
+    {
+        return InvokeAsync(() =>
+        {
+            _uploadBytesSent = Math.Clamp(loaded, 0, total);
+            _uploadTotalBytes = total;
+            _uploadPercent = total > 0 ? (int)Math.Clamp(loaded * 100 / total, 0, 100) : 0;
+            StateHasChanged();
+        });
+    }
+
     private async Task UploadSelectedAsync()
     {
         var file = _pendingUpload;
         if (file is null || _busy) return;
+        if (file.Size <= 0 || file.Size > 100L * 1024 * 1024)
+        {
+            _message = "Choose a non-empty file no larger than 100 MiB.";
+            return;
+        }
+
         _busy = true;
         _message = "";
+        _uploadBytesSent = 0;
+        _uploadTotalBytes = file.Size;
+        _uploadPercent = 0;
+        _uploadProgressReference = DotNetObjectReference.Create(this);
         try
         {
-            using var content = new MultipartFormDataContent();
-            await using var stream = file.OpenReadStream(100 * 1024 * 1024);
-            var part = new StreamContent(stream);
-            part.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
-            content.Add(part, "file", file.Name);
-            using var response = await Http.PostAsync("api/files", content);
-            if (response.IsSuccessStatusCode)
+            var result = await JS.InvokeAsync<UploadResponse>(
+                "contentManagementFiles.uploadFile",
+                _uploadInput,
+                "api/files",
+                _uploadProgressReference);
+            if (result.Status is >= 200 and < 300)
             {
+                _uploadBytesSent = file.Size;
+                _uploadPercent = 100;
                 _message = "File uploaded.";
                 _page = 1;
                 _uploadOpen = false;
                 _pendingUpload = null;
                 await LoadAsync();
             }
-            else _message = response.StatusCode == System.Net.HttpStatusCode.RequestEntityTooLarge ? "File exceeds the upload limit." : "Upload failed. Check file size and server permissions.";
+            else if (result.Status == 413)
+                _message = "File exceeds the upload limit.";
+            else if (result.Status == 401)
+                _message = "Your session has expired. Sign in again.";
+            else if (result.Status == 403)
+                _message = "Upload was rejected by the server's security policy.";
+            else
+                _message = "Upload failed. Check file size and server permissions.";
         }
-        catch (HttpRequestException) { _message = "Upload failed. Unable to connect to the server."; }
-        catch (IOException) { _message = "Upload failed. The file may exceed the browser upload limit."; }
-        finally { _busy = false; }
+        catch (JSException)
+        {
+            _message = "Upload failed. Unable to connect to the server or the upload was interrupted.";
+        }
+        finally
+        {
+            _uploadProgressReference?.Dispose();
+            _uploadProgressReference = null;
+            _busy = false;
+            _uploadBytesSent = 0;
+            _uploadTotalBytes = 0;
+            _uploadPercent = 0;
+        }
     }
 
     private void OpenRename() { if (_selected is null) return; _rename.FileName = _selected.FileName; _renameOpen = true; }
@@ -329,6 +375,8 @@ else
     private static bool IsText(string t)=>t.StartsWith("text/",StringComparison.OrdinalIgnoreCase)||t is "application/json" or "application/xml" or "application/javascript";
     private static string IconFor(string t)=>t.StartsWith("image/")?"IMG":t=="application/pdf"?"PDF":t.StartsWith("video/")?"VID":t.StartsWith("audio/")?"AUD":t.StartsWith("text/")||t=="application/json"?"TXT":"FILE";
     private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
+    private sealed record UploadFileMetadata(string Name, long Size, string ContentType);
+    private sealed record UploadResponse(int Status, string? Body);
     private sealed record SessionResponse(string Email, string? Role);
     private sealed record FileListResponse(List<FileItem> Items,long Total,int Page,int PageSize);
     private sealed record FileItem(Guid Id,string FileName,string ContentType,long SizeBytes,string Sha256,string Status,string UploadSource,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion,string ViewUrl);
