@@ -19,10 +19,11 @@ public sealed class FilesController(
     IFileStorage storage,
     IVideoPreviewService videoPreviewService,
     IOptions<ContentManagementOptions> options,
-    ILogger<FilesController> logger,
-    FileViewTokenService viewTokens) : ControllerBase
+    ExternalFileApiClient externalFiles,
+    ILogger<FilesController> logger) : ControllerBase
 {
     private const int MaxPageSize = 100;
+    private static readonly SemaphoreSlim ExternalUploadGate = new(1, 1);
 
     [HttpGet]
     [Authorize(Policy = ScopePolicies.FilesRead)]
@@ -45,12 +46,13 @@ public sealed class FilesController(
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(f => new
             {
-                f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
-                f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
+                f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+                f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
             })
             .ToListAsync(cancellationToken);
-        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.StorageKey, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion), viewTokens.CreateRelativeUrl(f.Id))).ToList();
+        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+            f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion),
+            $"/api/files/{f.Id}/content")).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
@@ -62,6 +64,84 @@ public sealed class FilesController(
         if (file.Length > options.Value.MaxUploadBytes)
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "File exceeds configured upload limit." });
 
+        var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+        if (settings?.ExternalStoragePreferred == true &&
+            (string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) ||
+             string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected)))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "External API preference is enabled but the External File API is not fully configured." });
+
+        if (settings?.ExternalStoragePreferred == true &&
+            !string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) &&
+            !string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))
+        {
+            await ExternalUploadGate.WaitAsync(cancellationToken);
+            try
+            {
+                // The application is deployed as one server process. Serialize quota check, external
+                // upload and metadata commit so concurrent uploads cannot oversubscribe the quota.
+                settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+                var usedBytes = await db.Files.AsNoTracking()
+                    .Where(f => f.UploadSource == FileUploadSource.ExternalServer && f.Status != ContentStatus.Deleted)
+                    .Select(f => (long?)f.SizeBytes).SumAsync(cancellationToken) ?? 0L;
+                var remaining = Math.Max(0, (settings?.ExternalStorageQuotaBytes ?? 0) - usedBytes);
+                if (settings is not null && file.Length <= remaining)
+                {
+                    var externalKey = $"{DateTime.UtcNow:yyyy/MM/dd}/{Guid.NewGuid():N}.bin";
+                    StoredBinary externalBinary;
+                    await using (var input = file.OpenReadStream())
+                    {
+                        try
+                        {
+                            externalBinary = await externalFiles.UploadAsync(
+                                settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected,
+                                externalKey, file.FileName, input, cancellationToken);
+                        }
+                        catch (HttpRequestException exception)
+                        {
+                            logger.LogError(exception, "External File API upload failed; upload was not redirected to local storage.");
+                            return StatusCode(StatusCodes.Status502BadGateway,
+                                new { message = "External File API upload failed. No local fallback was performed." });
+                        }
+                    }
+
+                    if (externalBinary.SizeBytes > remaining || externalBinary.SizeBytes != file.Length)
+                    {
+                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary that exceeded the reserved quota."); }
+                        logger.LogError("External File API reported an unexpected file size {ActualSize} for upload size {ExpectedSize}.",
+                            externalBinary.SizeBytes, file.Length);
+                        return StatusCode(StatusCodes.Status502BadGateway,
+                            new { message = "External File API returned unexpected file size metadata." });
+                    }
+
+                    var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer);
+                    if (string.IsNullOrWhiteSpace(externalEntity.FileName) || externalEntity.FileName.Length > 255)
+                    {
+                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary for invalid file metadata."); }
+                        return BadRequest(new { message = "Invalid file name." });
+                    }
+                    try
+                    {
+                        db.Files.Add(externalEntity);
+                        await db.SaveChangesAsync(cancellationToken);
+                    }
+                    catch
+                    {
+                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary after metadata persistence failed."); }
+                        throw;
+                    }
+                    return CreatedAtAction(nameof(Get), new { id = externalEntity.Id }, ToDetails(externalEntity));
+                }
+            }
+            finally
+            {
+                ExternalUploadGate.Release();
+            }
+        }
+
         StoredBinary binary;
         await using (var input = file.OpenReadStream())
         {
@@ -69,20 +149,7 @@ public sealed class FilesController(
             catch (InvalidDataException) { return StatusCode(StatusCodes.Status413PayloadTooLarge); }
         }
 
-        var now = DateTime.UtcNow;
-        var entity = new StoredFile
-        {
-            Id = Guid.NewGuid(),
-            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
-            ContentType = ResolveContentType(file.ContentType, file.FileName),
-            StorageKey = binary.StorageKey,
-            SizeBytes = binary.SizeBytes,
-            Sha256 = binary.Sha256,
-            CreatedUtc = now,
-            UpdatedUtc = now,
-            Status = ContentStatus.Active,
-            OwnerId = User.FindFirst("sub")?.Value
-        };
+        var entity = CreateEntity(file, binary, FileUploadSource.Local);
         if (string.IsNullOrWhiteSpace(entity.FileName))
         {
             await storage.DeleteAsync(binary.StorageKey, cancellationToken);
@@ -103,22 +170,23 @@ public sealed class FilesController(
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity));
     }
 
-    [HttpGet("view/{token}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> ViewWithToken(string token, CancellationToken cancellationToken)
+    private StoredFile CreateEntity(IFormFile file, StoredBinary binary, FileUploadSource source)
     {
-        if (!viewTokens.TryValidate(token, out var fileId)) return NotFound();
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == fileId, cancellationToken);
-        if (file is null || file.Status != ContentStatus.Active) return NotFound();
-        try
+        var now = DateTime.UtcNow;
+        return new StoredFile
         {
-            var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
-            Response.Headers["Content-Disposition"] = "inline; filename*=UTF-8''" + Uri.EscapeDataString(file.FileName);
-            Response.Headers["X-Content-Type-Options"] = "nosniff";
-            Response.Headers["Cache-Control"] = "private, no-store";
-            return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
-        }
-        catch (FileNotFoundException) { return NotFound(); }
+            Id = Guid.NewGuid(),
+            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
+            ContentType = ResolveContentType(file.ContentType, file.FileName),
+            StorageKey = binary.StorageKey,
+            SizeBytes = binary.SizeBytes,
+            Sha256 = binary.Sha256,
+            CreatedUtc = now,
+            UpdatedUtc = now,
+            Status = ContentStatus.Active,
+            UploadSource = source,
+            OwnerId = User.FindFirst("sub")?.Value
+        };
     }
 
     [HttpGet("{id:guid}")]
@@ -139,12 +207,26 @@ public sealed class FilesController(
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
         try
         {
+            if (file.UploadSource == FileUploadSource.ExternalServer)
+            {
+                var externalResponse = await externalFiles.GetFileAsync(file.StorageKey, cancellationToken);
+                Response.RegisterForDispose(externalResponse);
+                Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
+                Response.Headers["X-Content-Type-Options"] = "nosniff";
+                return File(await externalResponse.Content.ReadAsStreamAsync(cancellationToken),
+                    ResolveContentType(file.ContentType, file.FileName));
+            }
             var stream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
             Response.Headers["Content-Disposition"] = $"inline; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
             Response.Headers["X-Content-Type-Options"] = "nosniff";
             return File(stream, ResolveContentType(file.ContentType, file.FileName), enableRangeProcessing: true);
         }
         catch (FileNotFoundException) { return NotFound(); }
+        catch (HttpRequestException exception)
+        {
+            logger.LogError(exception, "External File API content read failed for file {FileId}.", id);
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = "External file storage is unavailable." });
+        }
     }
 
     [HttpGet("{id:guid}/preview")]
@@ -156,6 +238,9 @@ public sealed class FilesController(
 
         if (!Path.GetExtension(file.FileName).Equals(".wmv", StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { message = "Transcoded preview is only available for WMV files." });
+        if (file.UploadSource == FileUploadSource.ExternalServer)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "WMV transcoded preview is not yet supported for files stored in the External File API. Download or view the original file instead." });
 
         try
         {
@@ -181,8 +266,24 @@ public sealed class FilesController(
     {
         var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
-        try { return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken), ResolveContentType(file.ContentType, file.FileName), file.FileName, enableRangeProcessing: true); }
+        try
+        {
+            if (file.UploadSource == FileUploadSource.ExternalServer)
+            {
+                var externalResponse = await externalFiles.GetFileAsync(file.StorageKey, cancellationToken);
+                Response.RegisterForDispose(externalResponse);
+                return File(await externalResponse.Content.ReadAsStreamAsync(cancellationToken),
+                    ResolveContentType(file.ContentType, file.FileName), file.FileName);
+            }
+            return File(await storage.OpenReadAsync(file.StorageKey, cancellationToken),
+                ResolveContentType(file.ContentType, file.FileName), file.FileName, enableRangeProcessing: true);
+        }
         catch (FileNotFoundException) { return NotFound(); }
+        catch (HttpRequestException exception)
+        {
+            logger.LogError(exception, "External File API download failed for file {FileId}.", id);
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = "External file storage is unavailable." });
+        }
     }
 
     [HttpPatch("{id:guid}")]
@@ -281,14 +382,15 @@ public sealed class FilesController(
             ? "application/octet-stream" : value;
     }
 
-    private FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.StorageKey, file.ContentType,
-        file.SizeBytes, file.Sha256, file.Status, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
-        Convert.ToBase64String(file.RowVersion), viewTokens.CreateRelativeUrl(file.Id));
+    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.ContentType,
+        file.SizeBytes, file.Sha256, file.Status, file.UploadSource, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
+        Convert.ToBase64String(file.RowVersion));
 
-    public sealed record FileListItem(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
+    public sealed record FileListItem(Guid Id, string FileName, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc,
+        DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
-    public sealed record FileDetails(Guid Id, string FileName, string FilePath, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
+    public sealed record FileDetails(Guid Id, string FileName, string ContentType, long SizeBytes,
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
     public sealed record RenameFileRequest([Required, StringLength(255)] string FileName, string? RowVersion);
 }

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace ContentManagement.Server.Configuration;
@@ -20,25 +20,11 @@ public sealed class SwaggerAuthenticationOperationFilter : IOperationFilter
         operation.Security ??= [];
         operation.Security.Add(new OpenApiSecurityRequirement
         {
-            [new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "ApiKey"
-                }
-            }] = Array.Empty<string>()
+            [new OpenApiSecuritySchemeReference("ApiKey")] = new List<string>()
         });
         operation.Security.Add(new OpenApiSecurityRequirement
         {
-            [new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "AdminCookie"
-                }
-            }] = Array.Empty<string>()
+            [new OpenApiSecuritySchemeReference("AdminCookie")] = new List<string>()
         });
     }
 }

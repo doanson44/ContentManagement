@@ -9,6 +9,7 @@ namespace ContentManagement.Server.BackgroundJobs;
 public sealed class StaleFileCleanupJob(
     ContentManagementDbContext db,
     IFileStorage fileStorage,
+    ExternalFileApiClient externalFiles,
     ILogger<StaleFileCleanupJob> logger)
 {
     [DisableConcurrentExecution(timeoutInSeconds: 300)]
@@ -53,7 +54,10 @@ public sealed class StaleFileCleanupJob(
 
                 // File deletion is idempotent: if the process fails before SQL commits,
                 // the next run can safely retry even when the binary is already absent.
-                await fileStorage.DeleteAsync(file.StorageKey, cancellationToken);
+                if (file.UploadSource == FileUploadSource.ExternalServer)
+                    await externalFiles.DeleteConfiguredFileAsync(file.StorageKey, cancellationToken);
+                else
+                    await fileStorage.DeleteAsync(file.StorageKey, cancellationToken);
                 db.Files.Remove(file);
                 await db.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);

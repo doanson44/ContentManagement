@@ -4,18 +4,50 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 
 ## Implemented foundation
 
-- Exactly two application projects: `ContentManagement.Client` and `ContentManagement.Server`.
+- The hosted web application consists of `ContentManagement.Client` and `ContentManagement.Server`.
+- `ContentManagement.FileApi` is a separate, standalone filesystem API process. It does not reference the web server project; its readiness health check verifies the configured MySQL dependency.
 - Server-hosted Blazor WebAssembly static assets and client-side routing.
 - EF Core SQL Server context and initial migration for binary metadata and compressed JSON records.
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
 - Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
 - Lifecycle status enum and SQL row-version concurrency tokens.
+- File metadata records `UploadSource` (`Local` or `ExternalServer`); uploads authenticated with a managed API key are classified as external-server uploads, while browser/admin uploads are classified as local. Existing rows default to `Local` through an additive migration.
 - All EF Core enum properties are stored in SQL Server as their symbolic string names; the `EnumValuesAsStrings` migration converts existing numeric file/document statuses.
 - Managed API-client authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. Browser administrators use the admin session cookie. All endpoints require authentication by default; health and signed file-view URLs are explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
+
+## Orphan binary cleanup
+
+When Hangfire is enabled, the server runs the `orphan-file-cleanup` job daily at 01:00 in the server's local time zone. It reconciles local filesystem `.bin` files and External File API `.bin` files against SQL metadata and deletes binaries that have no corresponding file record for that provider.
+
+The job uses a 24-hour grace period to avoid racing with an upload whose binary has been written but whose metadata has not yet committed. It skips reparse-point/symbolic-link entries, deletes at most 500 orphan candidates per provider per run, logs failures, and retries remaining candidates on a later daily run. External inventory is exposed only through the authenticated File API. Configure `Hangfire:Enabled=true` for the recurring job to be registered and executed. The cleanup is intentionally limited to `.bin` files; it does not remove preview cache files or arbitrary files under the storage root.
+
+## Standalone File API
+
+`ContentManagement.FileApi` is an independent ASP.NET Core API with no database dependency. It stores files under `FileApi:RootPath` and accepts only relative `filePath` values; absolute paths, traversal segments, invalid segments, and symlink/reparse-point paths are rejected. Uploads never overwrite an existing path. The default upload limit is 100 MiB and is enforced while copying to a temporary file; the file is atomically moved into place after the upload succeeds. The API returns the file size and SHA-256 digest.
+
+Endpoints:
+
+- `GET /health` — anonymous health check.
+- `PUT /api/files?filePath=relative/path.ext` — multipart upload with a form field named `file` and a relative `filePath` query parameter.
+- `GET /api/files/download?filePath=relative/path.ext` — download as an attachment.
+- `GET /api/files/view?filePath=relative/path.ext` — inline view for safe image, PDF, audio, video, plain-text, and CSV types. HTML, SVG, and unknown file types are not rendered inline.
+- `GET /api/files/inventory?olderThanUtc=<UTC timestamp>` — authenticated inventory of old `.bin` files for server-side orphan reconciliation.
+- `GET /swagger` — Swagger UI with an `Authorize` button for the static API key.
+
+Configure the storage root and secret through environment variables (PowerShell example):
+
+```powershell
+$env:FileApi__RootPath = "D:\\ContentManagement\\files"
+$env:FileApi__MaxUploadBytes = "104857600"
+$env:Authentication__ApiKey = "<generate-a-random-secret-at-least-32-characters-long>"
+dotnet run --project src/ContentManagement.FileApi/ContentManagement.FileApi.csproj
+```
+
+The secret is intentionally blank in committed `appsettings.json`; the API fails at startup if `Authentication:ApiKey` is missing or shorter than 32 characters. Swagger sends the key in the `X-API-Key` header. Keep the API behind HTTPS, restrict network access to trusted clients, and grant the service account access only to the configured storage directory. Configure `FileApi:RootPath` to a dedicated directory, not a directory containing application files or secrets.
 
 ## WMV browser previews
 
@@ -148,8 +180,7 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 
 ## Data and storage notes
 
-- Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server.
-- File API responses expose `filePath` as a storage-relative key, never an absolute filesystem path. Upload and metadata responses include `viewUrl`, a signed 15-minute URL for inline viewing. Anyone possessing the URL can view that one active file until expiry; treat it as a secret. File-view signing uses the independent `ContentManagement:FileViewSigningKey` setting and does not depend on managed API-client credentials. Configure a stable random signing key of at least 32 characters in production; if omitted, the server generates a process-local key and logs a warning, so existing view URLs become invalid after a server restart. Use HTTPS before sharing them. Example PowerShell configuration: `$env:ContentManagement__FileViewSigningKey = "<at-least-32-character-random-secret>"`. Store this value in a protected environment variable or secret manager, not in source control. Set `ContentManagement:PublicBaseUrl` to the externally reachable HTTPS origin when consumers need absolute view URLs. For example, set `ContentManagement__PublicBaseUrl=https://content.example.com` in the server environment. Without this setting, `viewUrl` is a relative path that clients can resolve against the server origin.
+- Binary bytes are stored in date-partitioned directories under opaque server-generated keys; metadata is in SQL Server, including the upload source (`Local` or `ExternalServer`).
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
@@ -160,6 +191,8 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 ## Windows x86 package
 
 CI publishes the server as a self-contained `win-x86` application, includes hosted WebAssembly assets, validates required output files, and uploads `ContentManagement-win-x86.zip` as a workflow artifact.
+
+Run `publish-deploy.bat` from the repository root to build the same deployment packages locally. It runs the unit tests, publishes `ContentManagement.Server` (with the hosted Blazor WebAssembly client) and `ContentManagement.FileApi` as self-contained `win-x86` builds, validates the publish output, and writes `artifacts\ContentManagement-win-x86.zip` and `artifacts\ContentManagement-FileApi-win-x86.zip`. Nothing is packaged when a step fails; pass `-SkipTests` to package without running the unit test gate. Copy the ZIPs to the target server and extract them there; the File API is a separate process with its own storage root and API key configuration.
 
 Before production use, configure external SQL Server connectivity, a persistent storage root with appropriate service-account permissions, HTTPS termination, backups, and production secrets. Because startup applies pending migrations automatically, back up the database and review migration changes before deploying a new version. This startup migration approach suits the intended single-server deployment; use a controlled migration bundle or reviewed SQL script if the deployment model changes to multiple application instances or requires separate schema-change approval.
 
@@ -202,6 +235,12 @@ Managed API clients are authenticated through the existing X-Content-Management-
 
 This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
 
+## MySQL health check
+
+The File API `GET /health` endpoint checks connectivity to the configured MySQL database by opening a connection and running `SELECT 1`. The check has an 8-second overall health-check timeout, uses a 5-second connection/query timeout, and reports unhealthy if the connection string is missing, the database cannot be reached, authentication fails, or the probe query fails. It does not read or modify application data.
+
+Configure `ConnectionStrings:MySql` in `src/ContentManagement.FileApi/appsettings.json` for local development. For production, override it with the `ConnectionStrings__MySql` environment variable or a secret provider so credentials are not committed to source control. Example connection string format: `Server=<host>;Port=3306;Database=<database>;User ID=<username>;Password=<secret>;`. The File API's file bytes remain on the filesystem; MySQL is checked as a dependency and is not used for file storage.
+
 ## Quick Notes
 
 Quick Notes is an administrator-only personal note area available at `/dashboard/quick-notes`. It stores plain-text titles and content in SQL Server, independently of file and JSON content. The dashboard includes a Quick Notes entry for the signed-in administrator.
@@ -215,22 +254,16 @@ Quick Notes is an administrator-only personal note area available at `/dashboard
 
 Quick Notes currently supports the application's configured administrator session, not multiple independent user accounts. Content is plain text; rich text, attachments, sharing, reminders, and note version history are not implemented.
 
+### External File API storage
 
-## Responsive layout
+The administrator can configure the standalone ContentManagement.FileApi under /dashboard/setup:
 
-The client loads `wwwroot/css/responsive.css` after the base `app.css` stylesheet. The responsive layer refines the shared content width, dashboard navigation wrapping, file list/preview layout, table overflow, setup forms, modal viewport constraints, and Quick Notes layout without adding an application project or changing Blazor WebAssembly CSR.
+- Set the HTTPS base URL, API key, quota in GiB, and Prefer External API toggle.
+- The API key is protected with ASP.NET Core Data Protection before it is persisted; the setup endpoint never returns the secret.
+- When preference is enabled and the file fits within the remaining configured quota, the main server streams the file to PUT /api/files?filePath=... using the X-API-Key header, then stores the file metadata in SQL Server with UploadSource = ExternalServer.
+- Quota usage is calculated from non-deleted Files metadata records with UploadSource = ExternalServer; remaining capacity is max(0, quota - used). No capacity synchronization with the standalone API is performed.
+- If the file would exceed the configured quota, it is stored on the main server's local filesystem. If the External API is selected and an external upload fails, the request fails instead of silently falling back to local storage.
+- Downloads, inline content reads, and stale-file cleanup use the storage source recorded for each file. External URL changes are rejected while external file records exist, because the metadata currently stores the relative key rather than a per-file endpoint.
+- The main application serializes External quota checks/uploads within its single process. This assumes the documented single-server deployment; multi-instance deployments require a distributed quota reservation mechanism.
 
-Responsive behavior is designed around content width rather than device detection:
-
-- Wide desktop: dashboard navigation and file preview can use multi-column layouts.
-- Tablet and compact desktop: file workspace stacks when side-by-side panels become constrained; dashboard navigation wraps.
-- Mobile: content and forms use a single column, toolbar controls wrap, file/JSON/API-client tables become labeled record cards, modals respect the dynamic viewport, and Quick Notes places the list above the editor.
-- Reduced-motion preferences are respected by limiting animations and transitions.
-
-### Responsive verification checklist
-
-Before release, verify the application in browser device emulation and at least one real touch device. Suggested viewport widths: 320, 375, 390, 430, 768, 820, 1024, 1280, and 1440 CSS pixels.
-
-Check dashboard navigation, file search/upload/list/preview, JSON cards and row actions, API-client cards, setup forms, CRUD modals, Quick Notes list/editor/save actions, keyboard focus, and page-level horizontal overflow. On mobile, verify every table value has a visible field label and action buttons remain usable; desktop tables retain their tabular layout.
-
-This checklist documents the intended verification procedure; it is not a claim that every viewport or real device has already been tested.
+The External API must be deployed separately, configured with the same static API key that is entered in the main application's setup page, and reachable from the main server. The external API's `/health` endpoint is anonymous and checks process health; file operations require `X-API-Key`. The main server's `/health/ready` check also calls the authenticated `GET /api/files/health` endpoint on the configured External File API, so readiness reports unhealthy if the API is unreachable or its API key is rejected. The check has a 5-second HTTP timeout. If External File API storage is not configured, this dependency check reports healthy because the provider is optional. `/health/live` remains a liveness-only check and does not probe dependencies.

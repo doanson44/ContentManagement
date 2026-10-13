@@ -2,6 +2,7 @@ using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,13 +13,18 @@ namespace ContentManagement.Server.Controllers;
 [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme, Roles = "Administrator")]
 public sealed class AdminSetupController(
     ContentManagementDbContext db,
+    IDataProtectionProvider protectionProvider,
     ILogger<AdminSetupController> logger) : ControllerBase
 {
+    private readonly IDataProtector _apiKeyProtector =
+        protectionProvider.CreateProtector("ContentManagement.ExternalFileApi.ApiKey.v1");
+
     [HttpGet]
     public async Task<ActionResult<SetupResponse>> Get(CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
-        return Ok(ToResponse(settings));
+        var used = await GetExternalUsedBytesAsync(cancellationToken);
+        return Ok(ToResponse(settings, used));
     }
 
     [HttpPut]
@@ -26,13 +32,35 @@ public sealed class AdminSetupController(
     {
         if (request.StaleFileAgeDays is < 1 or > 3650)
             return BadRequest(new { message = "File age threshold must be between 1 and 3650 days." });
+        if (request.ExternalStorageQuotaBytes < 0)
+            return BadRequest(new { message = "External storage quota must be zero or greater." });
+
+        if (!string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) &&
+            (request.ExternalStorageApiKey.Trim().Length < 32 || request.ExternalStorageApiKey.Trim().Length > 1024))
+            return BadRequest(new { message = "External API key must contain between 32 and 1024 characters." });
+
+        var endpoint = request.ExternalStorageBaseUrl?.Trim().TrimEnd('/') ?? "";
+        if (!string.IsNullOrWhiteSpace(endpoint) &&
+            (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
+             (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)))
+            return BadRequest(new { message = "External API URL must be an absolute HTTP or HTTPS URL." });
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        if (request.ExternalStoragePreferred && (string.IsNullOrWhiteSpace(endpoint) ||
+            (string.IsNullOrWhiteSpace(request.ExternalStorageApiKey) && string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))))
+            return BadRequest(new { message = "Configure the External API URL and API key before enabling preference." });
         settings.StaleFileAgeDays = request.StaleFileAgeDays;
+        settings.ExternalStorageBaseUrl = endpoint;
+        settings.ExternalStorageQuotaBytes = request.ExternalStorageQuotaBytes;
+        settings.ExternalStoragePreferred = request.ExternalStoragePreferred;
+        if (!string.IsNullOrWhiteSpace(request.ExternalStorageApiKey))
+            settings.ExternalStorageApiKeyProtected = _apiKeyProtector.Protect(request.ExternalStorageApiKey.Trim());
         settings.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Administrator updated stale-file cleanup threshold.");
-        return Ok(ToResponse(settings));
+
+        logger.LogInformation("Administrator updated system setup and external storage preferences.");
+        var used = await GetExternalUsedBytesAsync(cancellationToken);
+        return Ok(ToResponse(settings, used));
     }
 
     private async Task<SystemSettings> GetOrCreateSettingsAsync(CancellationToken cancellationToken)
@@ -47,10 +75,33 @@ public sealed class AdminSetupController(
         return settings;
     }
 
-    private static SetupResponse ToResponse(SystemSettings settings) =>
-        new(settings.StaleFileAgeDays);
+    private async Task<long> GetExternalUsedBytesAsync(CancellationToken cancellationToken) =>
+        await db.Files.AsNoTracking()
+            .Where(file => file.UploadSource == FileUploadSource.ExternalServer &&
+                           file.Status != ContentStatus.Deleted)
+            .Select(file => (long?)file.SizeBytes)
+            .SumAsync(cancellationToken) ?? 0L;
 
-    public sealed record UpdateSetupRequest(int StaleFileAgeDays);
+    private static SetupResponse ToResponse(SystemSettings settings, long usedBytes) =>
+        new(settings.StaleFileAgeDays, settings.ExternalStorageBaseUrl,
+            !string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected),
+            settings.ExternalStorageQuotaBytes, usedBytes,
+            Math.Max(0, settings.ExternalStorageQuotaBytes - usedBytes),
+            settings.ExternalStoragePreferred);
 
-    public sealed record SetupResponse(int StaleFileAgeDays);
+    public sealed record UpdateSetupRequest(
+        int StaleFileAgeDays,
+        string? ExternalStorageBaseUrl,
+        string? ExternalStorageApiKey,
+        long ExternalStorageQuotaBytes,
+        bool ExternalStoragePreferred);
+
+    public sealed record SetupResponse(
+        int StaleFileAgeDays,
+        string ExternalStorageBaseUrl,
+        bool ExternalStorageApiKeyConfigured,
+        long ExternalStorageQuotaBytes,
+        long ExternalStorageUsedBytes,
+        long ExternalStorageRemainingBytes,
+        bool ExternalStoragePreferred);
 }

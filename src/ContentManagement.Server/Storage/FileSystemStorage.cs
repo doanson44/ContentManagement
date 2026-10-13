@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Storage;
 
-public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options) : IFileStorage
+public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options) : IFileStorage, IFileStorageInventory
 {
     private readonly string _root = Path.GetFullPath(options.Value.StorageRoot);
 
@@ -48,6 +48,42 @@ public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options
             try { File.Delete(temp); } catch (IOException) { }
             throw;
         }
+    }
+
+    public IReadOnlyList<StoredFileInventoryItem> ListOrphanCandidates(DateTime olderThanUtc)
+    {
+        var results = new List<StoredFileInventoryItem>();
+        var pending = new Stack<string>();
+        pending.Push(_root);
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    continue;
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pending.Push(entry);
+                    continue;
+                }
+
+                if (!Path.GetExtension(entry).Equals(".bin", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var info = new FileInfo(entry);
+                if (info.LastWriteTimeUtc > olderThanUtc)
+                    continue;
+
+                var key = Path.GetRelativePath(_root, entry).Replace(Path.DirectorySeparatorChar, '/');
+                results.Add(new StoredFileInventoryItem(key, info.LastWriteTimeUtc, info.Length));
+            }
+        }
+
+        return results;
     }
 
     public Task DeleteAsync(string storageKey, CancellationToken cancellationToken = default)
@@ -229,3 +265,10 @@ public sealed class FfmpegVideoPreviewService(
         catch (UnauthorizedAccessException) { }
     }
 }
+
+public interface IFileStorageInventory
+{
+    IReadOnlyList<StoredFileInventoryItem> ListOrphanCandidates(DateTime olderThanUtc);
+}
+
+public sealed record StoredFileInventoryItem(string StorageKey, DateTime LastWriteTimeUtc, long SizeBytes);

@@ -38,8 +38,8 @@ else
                     @if (_loading) { <p class="files-empty">Loading files…</p> }
                     else if (_items.Count == 0) { <p class="files-empty">No files found. Upload a file to get started.</p> }
                     else {
-                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>File</th><th>File path</th><th>Size</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>
-                        @foreach (var item in _items) { <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id"><td data-label="File"><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">@IconFor(item.ContentType)</span><span><strong>@item.FileName</strong><small>@item.ContentType</small></span></button></td><td data-label="File path" class="hash-value">@item.FilePath</td><td data-label="Size">@FormatSize(item.SizeBytes)</td><td data-label="Status"><span class="file-status">@item.Status</span></td><td data-label="Created">@item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td><td data-label="Actions"><button class="files-secondary" @onclick="() => OpenViewUrl(item)">View URL</button></td></tr> }
+                        <div class="files-table-wrap"><table class="files-table"><thead><tr><th>File</th><th>Size</th><th>Status</th><th>Source</th><th>View URL</th><th>Created</th></tr></thead><tbody>
+                        @foreach (var item in _items) { <tr class="@(_selected?.Id == item.Id ? "selected" : "")" @key="item.Id"><td><button class="files-name" @onclick="() => SelectAsync(item)"><span class="file-type">@IconFor(item.ContentType)</span><span><strong>@item.FileName</strong><small>@item.ContentType</small></span></button></td><td>@FormatSize(item.SizeBytes)</td><td><span class="file-status">@item.Status</span></td><td>@item.UploadSource</td><td><a href="@item.ViewUrl" target="_blank" rel="noopener noreferrer">@item.ViewUrl</a></td><td>@item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td></tr> }
                         </tbody></table></div>
                         <div class="files-pagination"><span>@_total files · Page @_page</span><button class="files-secondary" @onclick="PreviousAsync" disabled="@(_page <= 1 || _loading)">Previous</button><button class="files-secondary" @onclick="NextAsync" disabled="@(_page * _pageSize >= _total || _loading)">Next</button></div>
                     }
@@ -72,7 +72,7 @@ else
                             else if (IsText(_selected.ContentType)) { <pre class="files-text-preview">@_textPreview</pre> }
                             else { <div class="files-preview-placeholder"><span>↓</span><h2>Preview unavailable</h2><p>This file type cannot be previewed in the browser.</p><a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download file</a></div> }
                         </div>
-                        <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>File path</dt><dd class="hash-value">@_selected.FilePath</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd></dl>
+                        <div class="files-metadata"><h3>Details</h3><dl><dt>File ID</dt><dd>@_selected.Id</dd><dt>SHA-256</dt><dd class="hash-value">@_selected.Sha256</dd><dt>Owner</dt><dd>@(_selected.OwnerId ?? "—")</dd><dt>Created</dt><dd>@_selected.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd><dt>Status</dt><dd>@_selected.Status</dd><dt>Upload source</dt><dd>@_selected.UploadSource</dd></dl>
                         <button class="files-secondary" @onclick="OpenRename" disabled="@_busy">Edit display name</button>
                         <a class="files-secondary download-link" href="@DownloadUrl(_selected.Id)">Download original</a></div>
                     }
@@ -331,6 +331,6 @@ else
     private static string FormatSize(long n)=>n<1024?$"{n} B":n<1024*1024?$"{n/1024d:0.#} KB":n<1024L*1024*1024?$"{n/(1024d*1024):0.#} MB":$"{n/(1024d*1024*1024):0.#} GB";
     private sealed record SessionResponse(string Email, string? Role);
     private sealed record FileListResponse(List<FileItem> Items,long Total,int Page,int PageSize);
-    private sealed record FileItem(Guid Id,string FileName,string FilePath,string ContentType,long SizeBytes,string Sha256,string Status,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion,string ViewUrl);
+    private sealed record FileItem(Guid Id,string FileName,string ContentType,long SizeBytes,string Sha256,string Status,string UploadSource,string? OwnerId,DateTime CreatedUtc,DateTime UpdatedUtc,string RowVersion,string ViewUrl);
     private sealed class RenameModel { public string FileName {get;set;}=""; }
 }

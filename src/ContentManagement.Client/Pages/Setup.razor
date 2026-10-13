@@ -45,6 +45,42 @@ else if (_signedIn)
                     <button class="setup-primary" @onclick="() => _editOpen = true" disabled="@_busy">Edit settings</button>
                 </div>
             </section>
+            <section class="setup-card external-storage-setup">
+                <div class="setup-section-heading">
+                    <div class="setup-section-icon">⇧</div>
+                    <div>
+                        <h2>External File API storage</h2>
+                        <p>Prefer the standalone ContentManagement.FileApi while quota is available. Files fall back to local storage only when the configured quota cannot fit the upload.</p>
+                    </div>
+                </div>
+                <div class="setup-form-grid">
+                    <label>External API base URL
+                        <input type="url" @bind="_model.ExternalStorageBaseUrl" placeholder="https://files.example.com" disabled="@_busy" />
+                        <small>Use the API root URL, without /api/files. HTTP and HTTPS are supported; HTTPS is recommended for non-local networks.</small>
+                    </label>
+                    <label>External API key
+                        <input type="password" @bind="_model.ExternalStorageApiKey" autocomplete="new-password" placeholder="@(_model.ExternalStorageApiKeyConfigured ? "Configured — leave blank to keep current key" : "Enter API key")" disabled="@_busy" />
+                        <small>The key is encrypted at rest and is never returned to the browser.</small>
+                    </label>
+                    <label>External quota (GB)
+                        <input type="number" min="0" step="0.1" @bind="_model.ExternalStorageQuotaGb" disabled="@_busy" />
+                        <small>Quota is managed by this application, not queried from the External API.</small>
+                    </label>
+                    <label class="external-preference">
+                        <span>Prefer External API</span>
+                        <input type="checkbox" @bind="_model.ExternalStoragePreferred" disabled="@_busy" />
+                        <small>When disabled or quota is insufficient, new files are stored locally.</small>
+                    </label>
+                </div>
+                <div class="external-storage-usage">
+                    <div><span>Quota</span><strong>@FormatBytes(_model.ExternalStorageQuotaBytes)</strong></div>
+                    <div><span>Used by this system</span><strong>@FormatBytes(_model.ExternalStorageUsedBytes)</strong></div>
+                    <div><span>Remaining</span><strong>@FormatBytes(_model.ExternalStorageRemainingBytes)</strong></div>
+                </div>
+                <div class="setup-actions">
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save setup</button>
+                </div>
+            </section>
             @if (_editOpen)
             {
                 <div class="cm-modal-backdrop" role="presentation" @onclick="CloseEdit">
@@ -119,7 +155,17 @@ else
             if (settings is not null)
             {
                 _savedStaleFileAgeDays = settings.StaleFileAgeDays;
-                _model = new SetupModel { StaleFileAgeDays = _savedStaleFileAgeDays };
+                _model = new SetupModel
+                {
+                    StaleFileAgeDays = _savedStaleFileAgeDays,
+                    ExternalStorageBaseUrl = settings.ExternalStorageBaseUrl ?? "",
+                    ExternalStorageApiKeyConfigured = settings.ExternalStorageApiKeyConfigured,
+                    ExternalStorageQuotaBytes = settings.ExternalStorageQuotaBytes,
+                    ExternalStorageQuotaGb = settings.ExternalStorageQuotaBytes / (1024d * 1024 * 1024),
+                    ExternalStorageUsedBytes = settings.ExternalStorageUsedBytes,
+                    ExternalStorageRemainingBytes = settings.ExternalStorageRemainingBytes,
+                    ExternalStoragePreferred = settings.ExternalStoragePreferred
+                };
             }
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
@@ -141,12 +187,25 @@ else
             SetMessage("File age threshold must be between 1 and 3650 days.", true);
             return;
         }
+        if (!double.IsFinite(_model.ExternalStorageQuotaGb) ||
+            _model.ExternalStorageQuotaGb < 0 || _model.ExternalStorageQuotaGb > 1_000_000)
+        {
+            SetMessage("External quota must be between 0 and 1,000,000 GB.", true);
+            return;
+        }
 
         _busy = true;
         _message = "";
         try
         {
-            using var response = await Http.PutAsJsonAsync("api/admin/setup", _model);
+            using var response = await Http.PutAsJsonAsync("api/admin/setup", new
+            {
+                StaleFileAgeDays = _model.StaleFileAgeDays,
+                ExternalStorageBaseUrl = _model.ExternalStorageBaseUrl,
+                ExternalStorageApiKey = _model.ExternalStorageApiKey,
+                ExternalStorageQuotaBytes = checked((long)Math.Round(_model.ExternalStorageQuotaGb * 1024d * 1024 * 1024)),
+                ExternalStoragePreferred = _model.ExternalStoragePreferred
+            });
             if (!response.IsSuccessStatusCode)
             {
                 var problem = await response.Content.ReadFromJsonAsync<ApiMessage>();
@@ -155,7 +214,17 @@ else
             }
 
             _savedStaleFileAgeDays = _model.StaleFileAgeDays;
-            SetMessage("Cleanup settings saved.", false);
+            var saved = await response.Content.ReadFromJsonAsync<SetupResponse>();
+            if (saved is not null)
+            {
+                _model.ExternalStorageApiKeyConfigured = saved.ExternalStorageApiKeyConfigured;
+                _model.ExternalStorageQuotaBytes = saved.ExternalStorageQuotaBytes;
+                _model.ExternalStorageQuotaGb = saved.ExternalStorageQuotaBytes / (1024d * 1024 * 1024);
+                _model.ExternalStorageUsedBytes = saved.ExternalStorageUsedBytes;
+                _model.ExternalStorageRemainingBytes = saved.ExternalStorageRemainingBytes;
+                _model.ExternalStorageApiKey = "";
+            }
+            SetMessage("Setup settings saved.", false);
             _editOpen = false;
         }
         catch (HttpRequestException) { SetMessage("Unable to connect to the server.", true); }
@@ -164,12 +233,31 @@ else
 
     private void SetMessage(string message, bool error) { _message = message; _isError = error; }
 
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double size = Math.Max(0, bytes);
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1) { size /= 1024; unit++; }
+        return $"{size:0.##} {units[unit]}";
+    }
+
     private sealed class SetupModel
     {
         public int StaleFileAgeDays { get; set; } = 90;
+        public string ExternalStorageBaseUrl { get; set; } = "";
+        public string ExternalStorageApiKey { get; set; } = "";
+        public bool ExternalStorageApiKeyConfigured { get; set; }
+        public double ExternalStorageQuotaGb { get; set; } = 10;
+        public long ExternalStorageQuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+        public long ExternalStorageUsedBytes { get; set; }
+        public long ExternalStorageRemainingBytes { get; set; }
+        public bool ExternalStoragePreferred { get; set; }
     }
 
     private sealed record SessionResponse(string Email, string? Role);
-    private sealed record SetupResponse(int StaleFileAgeDays);
+    private sealed record SetupResponse(int StaleFileAgeDays, string ExternalStorageBaseUrl,
+        bool ExternalStorageApiKeyConfigured, long ExternalStorageQuotaBytes,
+        long ExternalStorageUsedBytes, long ExternalStorageRemainingBytes, bool ExternalStoragePreferred);
     private sealed record ApiMessage(string? Message);
 }

@@ -2,11 +2,13 @@ using ContentManagement.Server.Auth;
 using ContentManagement.Server.BackgroundJobs;
 using ContentManagement.Server.Compression;
 using ContentManagement.Server.Configuration;
+using ContentManagement.Server.HealthChecks;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Storage;
 using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -14,6 +16,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using System.Threading.RateLimiting;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,29 +33,34 @@ builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializ
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "ContentManagement API",
         Version = "v1",
         Description = "Authenticated content storage API. API-key callers must provide the X-Content-Management-Key header with the required scope."
     });
-    options.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
         Name = ApiKeyAuthenticationDefaults.HeaderName,
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
         Description = "Server-side API key. Do not place this key in Blazor WebAssembly client code."
     });
-    options.AddSecurityDefinition("AdminCookie", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("AdminCookie", new OpenApiSecurityScheme
     {
         Name = "__Host-ContentManagement.Admin",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
         Description = "Administrator session cookie issued by the OTP sign-in flow."
     });
     options.OperationFilter<SwaggerAuthenticationOperationFilter>();
 });
 builder.Services.AddProblemDetails();
+builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddScoped<ExternalFileApiClient>();
+builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ContentManagement", "DataProtectionKeys")));
 
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
@@ -89,12 +97,14 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<ContentManagementDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<ContentManagementDbContext>("sqlserver", tags: ["ready"]);
+    .AddDbContextCheck<ContentManagementDbContext>("sqlserver", tags: ["ready"])
+    .AddCheck<ExternalFileApiHealthCheck>("external-file-api", tags: ["ready"]);
 
 var hangfireEnabled = builder.Configuration.GetValue<bool>("Hangfire:Enabled");
 if (hangfireEnabled)
 {
     builder.Services.AddScoped<StaleFileCleanupJob>();
+    builder.Services.AddScoped<OrphanFileCleanupJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -112,8 +122,9 @@ if (hangfireEnabled)
 }
 
 builder.Services.AddSingleton<IContentCompressor, GzipContentCompressor>();
-builder.Services.AddSingleton<IFileStorage, FileSystemStorage>();
-builder.Services.AddSingleton<FileViewTokenService>();
+builder.Services.AddSingleton<FileSystemStorage>();
+builder.Services.AddSingleton<IFileStorage>(services => services.GetRequiredService<FileSystemStorage>());
+builder.Services.AddSingleton<IFileStorageInventory>(services => services.GetRequiredService<FileSystemStorage>());
 builder.Services.AddSingleton<IVideoPreviewService, FfmpegVideoPreviewService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
@@ -236,24 +247,20 @@ catch (Exception exception)
 }
 
 app.UseSerilogRequestLogging();
+
+// Swagger UI and the OpenAPI document are always enabled.
+// Restrict access at the network/reverse-proxy layer if these endpoints must be private.
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement Server API v1");
+});
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler();
     app.UseHsts();
 }
 app.UseHttpsRedirection();
-
-// Keep API documentation out of production deployments by default.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "ContentManagement API v1");
-        options.RoutePrefix = "swagger";
-        options.DocumentTitle = "ContentManagement API";
-    });
-}
 
 app.Use(async (context, next) =>
 {
@@ -295,6 +302,8 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
     var recurringJobManager = app.Services.GetRequiredService<IRecurringJobManager>();
     recurringJobManager.AddOrUpdate<StaleFileCleanupJob>(
         "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily());
+    recurringJobManager.AddOrUpdate<OrphanFileCleanupJob>(
+        "orphan-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(1), TimeZoneInfo.Local);
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]

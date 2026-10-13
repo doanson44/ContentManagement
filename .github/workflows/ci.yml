@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [master]
+    branches: [master, feature/file-upload-source]
   pull_request:
     branches: [master]
 permissions:
@@ -23,6 +23,16 @@ jobs:
         run: dotnet test tests/ContentManagement.UnitTests/ContentManagement.UnitTests.csproj --no-build --configuration Release
       - name: Integration tests
         run: dotnet test tests/ContentManagement.IntegrationTests/ContentManagement.IntegrationTests.csproj --no-build --configuration Release
+      - name: Publish standalone File API
+        run: dotnet publish src/ContentManagement.FileApi/ContentManagement.FileApi.csproj --configuration Release --runtime win-x86 --self-contained true --output artifacts/fileapi-publish
+      - name: Validate and package standalone File API
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f artifacts/fileapi-publish/ContentManagement.FileApi.exe
+          mkdir -p artifacts
+          (cd artifacts/fileapi-publish && zip -qr ../ContentManagement-FileApi-win-x86.zip .)
+          unzip -l artifacts/ContentManagement-FileApi-win-x86.zip
       - name: Publish Windows x86 deployment
         run: dotnet publish src/ContentManagement.Server/ContentManagement.Server.csproj --configuration Release --runtime win-x86 --self-contained true --output artifacts/publish
       - name: Validate and package deployment
@@ -35,6 +45,12 @@ jobs:
           mkdir -p artifacts
           (cd artifacts/publish && zip -qr ../ContentManagement-win-x86.zip .)
           unzip -l artifacts/ContentManagement-win-x86.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContentManagement-FileApi-win-x86
+          path: artifacts/ContentManagement-FileApi-win-x86.zip
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: ContentManagement-win-x86
