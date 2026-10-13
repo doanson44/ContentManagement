@@ -103,6 +103,14 @@ else
                     <p>Select a file to upload to ContentManagement. Maximum size: 100 MiB.</p>
                     <input @ref="_uploadInput" type="file" @onchange="UploadAsync" disabled="@_busy" />
                     @if (_pendingUpload is not null) { <p><strong>@_pendingUpload.Name</strong> · @FormatSize(_pendingUpload.Size)</p> }
+                    @if (_busy && _uploadTotalBytes > 0)
+                    {
+                        <div class="file-upload-progress" role="status" aria-live="polite">
+                            <div class="file-upload-progress-label"><span>@(_uploadPercent >= 100 ? "Processing on server…" : "Uploading…")</span><strong>@_uploadPercent%</strong></div>
+                            <progress value="@_uploadPercent" max="100" aria-label="File upload progress">@_uploadPercent%</progress>
+                            <small>@FormatSize(_uploadBytesSent) of @FormatSize(_uploadTotalBytes)</small>
+                        </div>
+                    }
                     <div class="setup-actions">
                         <button class="files-secondary" @onclick="CloseUpload" disabled="@_busy">Cancel</button>
                         <button class="setup-primary" @onclick="UploadSelectedAsync" disabled="@(_busy || _pendingUpload is null)">Upload</button>
