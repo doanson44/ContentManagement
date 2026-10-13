@@ -48,7 +48,7 @@ builder.Services.AddSwaggerGen(options =>
     });
     options.AddSecurityDefinition("AdminCookie", new OpenApiSecurityScheme
     {
-        Name = "__Host-ContentManagement.Admin",
+        Name = "ContentManagement.Admin",
         Type = SecuritySchemeType.ApiKey,
         In = ParameterLocation.Cookie,
         Description = "Administrator session cookie issued by the OTP sign-in flow."
@@ -162,9 +162,11 @@ builder.Services.AddAuthentication(options =>
         ApiKeyAuthenticationDefaults.Scheme, _ => { })
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
     {
-        options.Cookie.Name = "__Host-ContentManagement.Admin";
+        // SameAsRequest keeps the cookie Secure on HTTPS while allowing the configured HTTP-only host to sign in.
+        // HTTP sessions are not transport-secure; enable HTTPS at the host when available.
+        options.Cookie.Name = "ContentManagement.Admin";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.Path = "/";
         options.SlidingExpiration = true;
