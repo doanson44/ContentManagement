@@ -20,8 +20,10 @@ public sealed class FilesController(
     IVideoPreviewService videoPreviewService,
     IOptions<ContentManagementOptions> options,
     ExternalFileApiClient externalFiles,
+    IOptions<ExternalStorageOptions> externalStorageOptions,
     ILogger<FilesController> logger) : ControllerBase
 {
+    private readonly ExternalStorageOptions _externalStorage = externalStorageOptions.Value;
     private const int MaxPageSize = 100;
     private static readonly SemaphoreSlim ExternalUploadGate = new(1, 1);
 
@@ -65,15 +67,11 @@ public sealed class FilesController(
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "File exceeds configured upload limit." });
 
         var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
-        if (settings?.ExternalStoragePreferred == true &&
-            (string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) ||
-             string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected)))
+        if (settings?.ExternalStoragePreferred == true && !_externalStorage.IsConfigured)
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
-                new { message = "External API preference is enabled but the External File API is not fully configured." });
+                new { message = "External storage is enabled but ExternalStorage:BaseUrl or ExternalStorage:ApiKey is missing from server configuration." });
 
-        if (settings?.ExternalStoragePreferred == true &&
-            !string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) &&
-            !string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))
+        if (settings?.ExternalStoragePreferred == true && _externalStorage.IsConfigured)
         {
             await ExternalUploadGate.WaitAsync(cancellationToken);
             try
@@ -94,7 +92,6 @@ public sealed class FilesController(
                         try
                         {
                             externalBinary = await externalFiles.UploadAsync(
-                                settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected,
                                 externalKey, file.FileName, input, cancellationToken);
                         }
                         catch (HttpRequestException exception)
@@ -107,7 +104,7 @@ public sealed class FilesController(
 
                     if (externalBinary.SizeBytes > remaining || externalBinary.SizeBytes != file.Length)
                     {
-                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
                         catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary that exceeded the reserved quota."); }
                         logger.LogError("External File API reported an unexpected file size {ActualSize} for upload size {ExpectedSize}.",
                             externalBinary.SizeBytes, file.Length);
@@ -118,7 +115,7 @@ public sealed class FilesController(
                     var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer);
                     if (string.IsNullOrWhiteSpace(externalEntity.FileName) || externalEntity.FileName.Length > 255)
                     {
-                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
                         catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary for invalid file metadata."); }
                         return BadRequest(new { message = "Invalid file name." });
                     }
@@ -129,7 +126,7 @@ public sealed class FilesController(
                     }
                     catch
                     {
-                        try { await externalFiles.DeleteAsync(settings.ExternalStorageBaseUrl, settings.ExternalStorageApiKeyProtected, externalKey, CancellationToken.None); }
+                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
                         catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary after metadata persistence failed."); }
                         throw;
                     }
