@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace ContentManagement.Server.Domain;
 
 public sealed class SystemSettings
