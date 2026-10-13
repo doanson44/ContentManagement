@@ -59,7 +59,11 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
-// Persist the Data Protection key ring in SQL Server because hosted environments may not grant\n// write access to the process profile directory. Keep the application name stable across deployments.\nbuilder.Services.AddDataProtection()\n    .SetApplicationName("ContentManagement")\n    .PersistKeysToDbContext<ContentManagementDbContext>();
+// Persist the Data Protection key ring in SQL Server because hosted environments may not grant
+// write access to the process profile directory. Keep the application name stable across deployments.
+builder.Services.AddDataProtection()
+    .SetApplicationName("ContentManagement")
+    .PersistKeysToDbContext<ContentManagementDbContext>();
 
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
