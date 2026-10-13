@@ -46,7 +46,6 @@ public sealed class AdminSetupController(
         settings.StaleFileAgeDays = request.StaleFileAgeDays;
         settings.ExternalStorageQuotaBytes = request.ExternalStorageQuotaBytes;
         settings.ExternalStoragePreferred = request.ExternalStoragePreferred;
-        settings.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Administrator updated system setup and external storage preferences.");
