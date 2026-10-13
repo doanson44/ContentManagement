@@ -1,11 +1,12 @@
 using ContentManagement.Server.Domain;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ContentManagement.Server.Data;
 
 public sealed class ContentManagementDbContext(DbContextOptions<ContentManagementDbContext> options)
-    : DbContext(options)
+    : DbContext(options), IDataProtectionKeyContext
 {
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<JsonDocumentRecord> JsonDocuments => Set<JsonDocumentRecord>();
@@ -13,6 +14,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
     public DbSet<QuickNote> QuickNotes => Set<QuickNote>();
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,6 +30,12 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             property.SetValueConverter((ValueConverter)Activator.CreateInstance(converterType)!);
             property.SetMaxLength(32);
         }
+
+        modelBuilder.Entity<DataProtectionKey>(entity =>
+        {
+            entity.ToTable("DataProtectionKeys");
+            entity.HasKey(key => key.Id);
+        });
 
         modelBuilder.Entity<SystemSettings>(entity =>
         {
