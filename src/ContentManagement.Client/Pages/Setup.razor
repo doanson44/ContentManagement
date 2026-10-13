@@ -53,23 +53,27 @@ else if (_signedIn)
                         <p>Prefer the standalone ContentManagement.FileApi while quota is available. Files fall back to local storage only when the configured quota cannot fit the upload.</p>
                     </div>
                 </div>
+                <p class="external-storage-config-status">
+                    @if (_model.ExternalStorageConfigured)
+                    {
+                        <strong>External API configured.</strong>
+                        <span>Connection URL and API key are managed in server-side appsettings or environment configuration.</span>
+                    }
+                    else
+                    {
+                        <strong>External API not configured.</strong>
+                        <span>Set ExternalStorage:BaseUrl and ExternalStorage:ApiKey on the server before enabling external storage.</span>
+                    }
+                </p>
                 <div class="setup-form-grid">
-                    <label>External API base URL
-                        <input type="url" @bind="_model.ExternalStorageBaseUrl" placeholder="https://files.example.com" disabled="@_busy" />
-                        <small>Use the API root URL, without /api/files. HTTP and HTTPS are supported; HTTPS is recommended for non-local networks.</small>
-                    </label>
-                    <label>External API key
-                        <input type="password" @bind="_model.ExternalStorageApiKey" autocomplete="new-password" placeholder="@(_model.ExternalStorageApiKeyConfigured ? "Configured — leave blank to keep current key" : "Enter API key")" disabled="@_busy" />
-                        <small>The key is encrypted at rest and is never returned to the browser.</small>
-                    </label>
-                    <label>External quota (GB)
+                    <label>External storage quota (GB)
                         <input type="number" min="0" step="0.1" @bind="_model.ExternalStorageQuotaGb" disabled="@_busy" />
-                        <small>Quota is managed by this application, not queried from the External API.</small>
+                        <small>Quota is enforced by this application; it is not queried from the External API.</small>
                     </label>
                     <label class="external-preference">
-                        <span>Prefer External API</span>
-                        <input type="checkbox" @bind="_model.ExternalStoragePreferred" disabled="@_busy" />
-                        <small>When disabled or quota is insufficient, new files are stored locally.</small>
+                        <span>Enable external storage</span>
+                        <input type="checkbox" @bind="_model.ExternalStoragePreferred" disabled="@_busy || !_model.ExternalStorageConfigured" />
+                        <small>When enabled, new uploads use external storage while quota is available. Otherwise, files are stored locally.</small>
                     </label>
                 </div>
                 <div class="external-storage-usage">
@@ -158,8 +162,7 @@ else
                 _model = new SetupModel
                 {
                     StaleFileAgeDays = _savedStaleFileAgeDays,
-                    ExternalStorageBaseUrl = settings.ExternalStorageBaseUrl ?? "",
-                    ExternalStorageApiKeyConfigured = settings.ExternalStorageApiKeyConfigured,
+                    ExternalStorageConfigured = settings.ExternalStorageConfigured,
                     ExternalStorageQuotaBytes = settings.ExternalStorageQuotaBytes,
                     ExternalStorageQuotaGb = settings.ExternalStorageQuotaBytes / (1024d * 1024 * 1024),
                     ExternalStorageUsedBytes = settings.ExternalStorageUsedBytes,
@@ -201,8 +204,6 @@ else
             using var response = await Http.PutAsJsonAsync("api/admin/setup", new
             {
                 StaleFileAgeDays = _model.StaleFileAgeDays,
-                ExternalStorageBaseUrl = _model.ExternalStorageBaseUrl,
-                ExternalStorageApiKey = _model.ExternalStorageApiKey,
                 ExternalStorageQuotaBytes = checked((long)Math.Round(_model.ExternalStorageQuotaGb * 1024d * 1024 * 1024)),
                 ExternalStoragePreferred = _model.ExternalStoragePreferred
             });
@@ -217,12 +218,12 @@ else
             var saved = await response.Content.ReadFromJsonAsync<SetupResponse>();
             if (saved is not null)
             {
-                _model.ExternalStorageApiKeyConfigured = saved.ExternalStorageApiKeyConfigured;
+                _model.ExternalStorageConfigured = saved.ExternalStorageConfigured;
                 _model.ExternalStorageQuotaBytes = saved.ExternalStorageQuotaBytes;
                 _model.ExternalStorageQuotaGb = saved.ExternalStorageQuotaBytes / (1024d * 1024 * 1024);
                 _model.ExternalStorageUsedBytes = saved.ExternalStorageUsedBytes;
                 _model.ExternalStorageRemainingBytes = saved.ExternalStorageRemainingBytes;
-                _model.ExternalStorageApiKey = "";
+
             }
             SetMessage("Setup settings saved.", false);
             _editOpen = false;
@@ -245,9 +246,7 @@ else
     private sealed class SetupModel
     {
         public int StaleFileAgeDays { get; set; } = 90;
-        public string ExternalStorageBaseUrl { get; set; } = "";
-        public string ExternalStorageApiKey { get; set; } = "";
-        public bool ExternalStorageApiKeyConfigured { get; set; }
+        public bool ExternalStorageConfigured { get; set; }
         public double ExternalStorageQuotaGb { get; set; } = 10;
         public long ExternalStorageQuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024;
         public long ExternalStorageUsedBytes { get; set; }
@@ -256,8 +255,8 @@ else
     }
 
     private sealed record SessionResponse(string Email, string? Role);
-    private sealed record SetupResponse(int StaleFileAgeDays, string ExternalStorageBaseUrl,
-        bool ExternalStorageApiKeyConfigured, long ExternalStorageQuotaBytes,
-        long ExternalStorageUsedBytes, long ExternalStorageRemainingBytes, bool ExternalStoragePreferred);
+    private sealed record SetupResponse(int StaleFileAgeDays, bool ExternalStorageConfigured,
+        long ExternalStorageQuotaBytes, long ExternalStorageUsedBytes,
+        long ExternalStorageRemainingBytes, bool ExternalStoragePreferred);
     private sealed record ApiMessage(string? Message);
 }
