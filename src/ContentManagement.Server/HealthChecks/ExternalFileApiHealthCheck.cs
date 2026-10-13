@@ -1,45 +1,34 @@
-using ContentManagement.Server.Data;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.EntityFrameworkCore;
+using ContentManagement.Server.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.HealthChecks;
 
 public sealed class ExternalFileApiHealthCheck(
     IHttpClientFactory httpClientFactory,
-    ContentManagementDbContext db,
-    IDataProtectionProvider protectionProvider,
+    IOptions<ExternalStorageOptions> externalStorageOptions,
     ILogger<ExternalFileApiHealthCheck> logger) : IHealthCheck
 {
-    private readonly IDataProtector _protector =
-        protectionProvider.CreateProtector("ContentManagement.ExternalFileApi.ApiKey.v1");
+    private readonly ExternalStorageOptions _options = externalStorageOptions.Value;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        if (!_options.IsConfigured)
+            return HealthCheckResult.Healthy("External File API is not configured.");
+
         try
         {
-            var settings = await db.SystemSettings.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
-
-            if (settings is null ||
-                string.IsNullOrWhiteSpace(settings.ExternalStorageBaseUrl) ||
-                string.IsNullOrWhiteSpace(settings.ExternalStorageApiKeyProtected))
-            {
-                return HealthCheckResult.Healthy("External File API is not configured.");
-            }
-
-            if (!Uri.TryCreate(settings.ExternalStorageBaseUrl, UriKind.Absolute, out var baseUri) ||
+            if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri) ||
                 (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
             {
                 return HealthCheckResult.Unhealthy("External File API URL must be an absolute HTTP or HTTPS URL.");
             }
 
-            var key = _protector.Unprotect(settings.ExternalStorageApiKeyProtected);
             var endpoint = new Uri(baseUri.ToString().TrimEnd('/') + "/api/files/health");
             using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-            request.Headers.Add("X-API-Key", key);
+            request.Headers.Add("X-API-Key", _options.ApiKey);
 
             var client = httpClientFactory.CreateClient(nameof(ExternalFileApiHealthCheck));
             using var response = await client.SendAsync(
