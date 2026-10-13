@@ -52,7 +52,6 @@ public sealed class AdminAuthController(
             CodeHash = HashOtp(email, code, options.OtpHashKey),
             CreatedUtc = now,
             ExpiresUtc = now.AddMinutes(options.OtpLifetimeMinutes),
-            LastSentUtc = now
         };
         db.AdminOtpChallenges.Add(challenge);
         await db.SaveChangesAsync(cancellationToken);
