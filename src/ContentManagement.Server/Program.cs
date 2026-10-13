@@ -65,6 +65,20 @@ builder.Services.AddDataProtection()
     .SetApplicationName("ContentManagement")
     .PersistKeysToDbContext<ContentManagementDbContext>();
 
+builder.Services.AddOptions<ExternalStorageOptions>()
+    .Bind(builder.Configuration.GetSection(ExternalStorageOptions.SectionName))
+    .Validate(options =>
+        (string.IsNullOrWhiteSpace(options.BaseUrl) && string.IsNullOrWhiteSpace(options.ApiKey)) ||
+        (!string.IsNullOrWhiteSpace(options.BaseUrl) && !string.IsNullOrWhiteSpace(options.ApiKey)),
+        "ExternalStorage:BaseUrl and ExternalStorage:ApiKey must either both be configured or both be empty.")
+    .Validate(options => string.IsNullOrWhiteSpace(options.BaseUrl) ||
+        (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var externalBaseUrl) &&
+         (externalBaseUrl.Scheme == Uri.UriSchemeHttps || externalBaseUrl.Scheme == Uri.UriSchemeHttp)),
+        "ExternalStorage:BaseUrl must be an absolute HTTP or HTTPS URL.")
+    .Validate(options => string.IsNullOrWhiteSpace(options.ApiKey) || options.ApiKey.Length >= 32,
+        "ExternalStorage:ApiKey must contain at least 32 characters when configured.")
+    .ValidateOnStart();
+
 builder.Services.AddOptions<ContentManagementOptions>()
     .Bind(builder.Configuration.GetSection(ContentManagementOptions.SectionName))
     .ValidateDataAnnotations()
