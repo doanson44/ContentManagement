@@ -166,6 +166,8 @@ Server=localhost;Database=ContentManagement;Integrated Security=True;Encrypt=Tru
 
 Ensure SQL Server is installed/running and the Windows identity running the application has permission to access the database. On startup, the server calls EF Core `Database.MigrateAsync()` to apply any pending migrations before serving requests. Review migrations and back up existing data before deploying schema changes. The SQL Server identity must have permission to create the database if it does not exist and to modify its schema; if the configured identity lacks these permissions or SQL Server is unavailable, startup fails.
 
+ASP.NET Core Data Protection keys are persisted in the `DataProtectionKeys` table in this same SQL Server database, so the application does not need filesystem access for its key ring. Treat this table as cryptographic secret material: restrict database permissions, use the hosting provider's database encryption-at-rest controls where available, and include the table in backups. Do not delete its rows; losing the key ring invalidates existing protected cookies and other Data Protection payloads.
+
 Override the connection string per environment rather than committing credentials. For example, in PowerShell:
 
 ```powershell
