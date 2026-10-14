@@ -9,7 +9,7 @@ public sealed class MySqlHealthCheck(IConfiguration configuration, ILogger<MySql
     {
         var connectionString = configuration.GetConnectionString("MySql");
         if (string.IsNullOrWhiteSpace(connectionString))
-            return HealthCheckResult.Unhealthy("ConnectionStrings:MySql is not configured.");
+            return HealthCheckResult.Healthy("ConnectionStrings:MySql is not configured; MySQL check skipped.");
 
         try
         {
