@@ -49,6 +49,10 @@
 </section>
 
 @code {
+    // Multiple component instances can initialize during navigation. Share the in-flight
+    // guard across instances so only one automatic OTP request is issued at a time.
+    private static int _otpRequestInProgress;
+
     private string _code = "";
     private string _message = "";
     private bool _messageIsSuccess;
@@ -84,7 +88,9 @@
 
     private async Task RequestOtpAsync()
     {
-        if (_busy || _requestingCode) return;
+        if (_busy || _requestingCode || Interlocked.CompareExchange(ref _otpRequestInProgress, 1, 0) != 0)
+            return;
+
         _message = "";
         _messageIsSuccess = false;
         _requestingCode = true;
@@ -109,6 +115,7 @@
         finally
         {
             _requestingCode = false;
+            Volatile.Write(ref _otpRequestInProgress, 0);
         }
     }
 
