@@ -223,7 +223,7 @@ public sealed class PublicHtmlPagesController(
             var stream = await storage.OpenReadAsync(page.StorageKey, cancellationToken);
             Response.Headers["Cache-Control"] = "no-store";
             Response.Headers["X-Content-Type-Options"] = "nosniff";
-            Response.Headers["Content-Security-Policy"] = "sandbox allow-scripts allow-forms allow-popups allow-modals; default-src https: http: data: blob:; base-uri 'none'";
+            Response.Headers["Content-Security-Policy"] = "sandbox allow-scripts allow-forms allow-popups allow-modals; default-src https: http: data: blob:; script-src https: http: data: blob: 'unsafe-inline'; style-src https: http: data: blob: 'unsafe-inline'; base-uri 'none'";
             return File(stream, "text/html; charset=utf-8", enableRangeProcessing: false);
         }
         catch (FileNotFoundException) { return NotFound(); }
