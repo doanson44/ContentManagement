@@ -6,11 +6,17 @@ public sealed class ContentManagementOptions
 {
     public const string SectionName = "ContentManagement";
 
-    // Avoid LocalApplicationData: Windows services and IIS may resolve it to a protected systemprofile directory.
-    // Path.GetTempPath() normally resolves to the service's writable Windows temp directory.
-    // Configure StorageRoot to a dedicated persistent directory for production data when possible.
+    // Keep persistent binaries beside (not inside) the deployment directory so replacing the ZIP
+    // does not replace the data. The hosting identity must have write access to this sibling directory.
     [Required]
-    public string StorageRoot { get; init; } = Path.Combine(Path.GetTempPath(), "ContentManagement", "files");
+    public string StorageRoot { get; init; } = GetDefaultStorageRoot();
+
+    private static string GetDefaultStorageRoot()
+    {
+        var deploymentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+        var parentDirectory = deploymentDirectory.Parent?.FullName ?? deploymentDirectory.FullName;
+        return Path.Combine(parentDirectory, "ContentManagement-Data", "files");
+    }
 
     [Range(1, long.MaxValue)]
     public long MaxUploadBytes { get; init; } = 104_857_600;
