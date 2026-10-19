@@ -64,6 +64,10 @@ public sealed class PublicHtmlPagesIntegrationTests(SqlServerFixture db)
         using var publicContent = await anonymous.GetAsync($"/api/public-html/{slug}/content");
         Assert.Equal(HttpStatusCode.OK, publicContent.StatusCode);
         Assert.Equal(html, await publicContent.Content.ReadAsStringAsync());
+        var contentCsp = Assert.Single(publicContent.Headers.GetValues("Content-Security-Policy"));
+        Assert.Contains("script-src https: http: data: blob: 'unsafe-inline'", contentCsp, StringComparison.Ordinal);
+        Assert.Contains("style-src https: http: data: blob: 'unsafe-inline'", contentCsp, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow-same-origin", contentCsp, StringComparison.Ordinal);
 
         var newSlug = $"renamed-{Guid.NewGuid():N}";
         using var rename = await client.PatchAsJsonAsync($"/api/public-html/{created.Id}/slug", new { slug = newSlug });
