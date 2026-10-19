@@ -33,7 +33,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.AdminOtpChallenge", b =>
         {
-            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uniqueidentifier");
             b.Property<string>("CodeHash").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<DateTime?>("ConsumedUtc").HasColumnType("datetime2");
