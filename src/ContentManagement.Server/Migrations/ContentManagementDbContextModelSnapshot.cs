@@ -156,6 +156,8 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
                 new
                 {
                     Id = 1,
+                    ExternalStoragePreferred = false,
+                    ExternalStorageQuotaBytes = 10737418240L,
                     StaleFileAgeDays = 90
                 });
         });
