@@ -854,3 +854,33 @@ a.files-upload-button,
 .public-html-dialog input[type=file]{width:100%;padding:.6rem 0}
 .public-html-dialog .setup-actions{justify-content:flex-end;margin-top:.75rem}
 @media(max-width:640px){.public-html-stats{grid-template-columns:minmax(0,1fr);gap:.5rem}.public-html-stats>div{padding:.85rem 1rem}.public-html-stats strong{font-size:1.4rem}.public-html-actions{min-width:0}}
+
+
+/* Public HTML statistics: use the shared dark theme palette instead of the legacy light cards. */
+.public-html-stats>div {
+    background: var(--cm-surface);
+    border-color: var(--cm-border);
+    box-shadow: 0 1px 2px rgba(0,0,0,.16);
+}
+.public-html-stats span {
+    color: var(--cm-muted);
+}
+.public-html-stats strong {
+    color: var(--cm-text);
+}
+.public-html-slug {
+    color: var(--cm-muted);
+}
+.public-html-published {
+    background: #123326;
+    color: var(--cm-success);
+}
+.public-html-dialog label {
+    color: var(--cm-text);
+}
+.public-html-dialog input:not([type=file]) {
+    background: var(--cm-bg);
+    color: var(--cm-text);
+    border-color: var(--cm-border-strong);
+    color-scheme: dark;
+}
