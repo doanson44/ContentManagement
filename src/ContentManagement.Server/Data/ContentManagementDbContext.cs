@@ -14,6 +14,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
     public DbSet<QuickNote> QuickNotes => Set<QuickNote>();
+    public DbSet<PublicHtmlPage> PublicHtmlPages => Set<PublicHtmlPage>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -67,6 +68,26 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.Property(client => client.ScopesJson).HasMaxLength(1000).IsRequired();
             entity.HasIndex(client => new { client.IsActive, client.Name });
             entity.Property(client => client.RowVersion).IsRowVersion();
+        });
+
+        modelBuilder.Entity<PublicHtmlPage>(entity =>
+        {
+            entity.ToTable("PublicHtmlPages");
+            entity.HasKey(page => page.Id);
+            entity.Property(page => page.Id).ValueGeneratedNever();
+            entity.Property(page => page.Title).HasMaxLength(256).IsRequired();
+            entity.Property(page => page.Slug).HasMaxLength(80).IsRequired();
+            entity.HasIndex(page => page.Slug).IsUnique();
+            entity.Property(page => page.StorageKey).HasMaxLength(180).IsRequired();
+            entity.Property(page => page.SizeBytes).HasColumnType("bigint");
+            entity.Property(page => page.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(page => page.OwnerId).HasMaxLength(200);
+            entity.Property(page => page.IsPublished).HasDefaultValue(false);
+            entity.Property(page => page.IsDeleted).HasDefaultValue(false);
+            entity.Property(page => page.StorageDeletePending).HasDefaultValue(false);
+            entity.HasIndex(page => new { page.IsPublished, page.IsDeleted, page.CreatedUtc });
+            entity.HasIndex(page => page.LastViewedAtUtc);
+            entity.HasIndex(page => page.StorageDeletePending);
         });
 
         modelBuilder.Entity<QuickNote>(entity =>

@@ -1,0 +1,252 @@
+@page "/dashboard/public-html"
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Public HTML Pages · ContentManagement</PageTitle>
+
+@if (_checkingSession)
+{
+    <div class="dashboard-loading">Checking administrator session…</div>
+}
+else if (!_signedIn)
+{
+    <div class="dashboard-loading">Your session has expired. Redirecting…</div>
+}
+else
+{
+    <div class="dashboard-page files-page public-html-page">
+        <aside class="dashboard-sidebar">
+            <a class="dashboard-brand" href="/dashboard"><span class="dashboard-logo">CM</span><span>ContentManagement</span></a>
+            <p class="sidebar-label">WORKSPACE</p><a class="sidebar-link" href="/dashboard">⌂ Dashboard</a>
+            <p class="sidebar-label">MANAGEMENT</p>
+            <a class="sidebar-link" href="/dashboard/files">▤ Files</a>
+            <a class="sidebar-link" href="/dashboard/json">{ } JSON documents</a>
+            <a class="sidebar-link active" href="/dashboard/public-html">▧ Public HTML Pages</a>
+            <div class="sidebar-bottom"><div class="admin-avatar">A</div><div class="admin-identity"><strong>Administrator</strong><span>@_email</span></div></div>
+        </aside>
+        <main class="dashboard-main files-main">
+            <header class="dashboard-header"><div><p class="dashboard-eyebrow">CONTENT MANAGEMENT</p><h1>Public HTML Pages</h1><p class="dashboard-subtitle">Upload, publish and manage standalone HTML pages.</p></div>
+                <button class="files-upload-button" @onclick="OpenUpload" disabled="@_busy">Upload HTML</button>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(_message)) { <div class="files-message" role="status">@_message</div> }
+            <section class="public-html-stats" aria-label="Public HTML statistics">
+                <div><span>Total pages</span><strong>@_total</strong></div><div><span>Published</span><strong>@_published</strong></div><div><span>Unpublished</span><strong>@_unpublished</strong></div>
+            </section>
+            <section class="files-list-panel">
+                <div class="files-toolbar">
+                    <input aria-label="Search pages" placeholder="Search by title or slug…" @bind="_search" @bind:event="oninput" />
+                    <select aria-label="Filter publish status" @bind="_status"><option value="">All statuses</option><option value="published">Published</option><option value="unpublished">Unpublished</option></select>
+                    <button class="files-secondary" @onclick="SearchAsync" disabled="@_busy">Search</button>
+                </div>
+                @if (_loading) { <p class="files-empty">Loading pages…</p> }
+                else if (_items.Count == 0) { <p class="files-empty">No HTML pages found. Upload an HTML file to get started.</p> }
+                else
+                {
+                    <div class="files-table-wrap"><table class="files-table">
+                        <thead><tr><th>Page</th><th>Size</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                        <tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr @key="item.Id">
+                                <td data-label="Page"><strong>@item.Title</strong><small class="public-html-slug">/@item.Slug</small></td>
+                                <td data-label="Size">@FormatSize(item.SizeBytes)</td>
+                                <td data-label="Status"><span class="file-status @(item.IsPublished ? "public-html-published" : "")">@(item.IsPublished ? "Published" : "Unpublished")</span></td>
+                                <td data-label="Created">@item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td data-label="Actions" class="public-html-actions">
+                                    @if (item.IsPublished) { <a class="files-secondary public-html-action-link" href="@($"/html/{Uri.EscapeDataString(item.Slug)}")" target="_blank" rel="noopener noreferrer">View</a> }
+                                    <button class="files-secondary" @onclick="() => OpenRename(item)" disabled="@_busy">Rename</button>
+                                    <button class="files-secondary" @onclick="() => TogglePublishAsync(item)" disabled="@_busy">@(item.IsPublished ? "Unpublish" : "Publish")</button>
+                                    <button class="files-danger" @onclick="() => ConfirmDelete(item)" disabled="@_busy">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table></div>
+                    <div class="files-pagination"><span>@_total pages · Page @_page</span><button class="files-secondary" @onclick="PreviousAsync" disabled="@(_page <= 1 || _loading)">Previous</button><button class="files-secondary" @onclick="NextAsync" disabled="@(_page * PageSize >= _total || _loading)">Next</button></div>
+                }
+            </section>
+        </main>
+    </div>
+    @if (_uploadOpen)
+    {
+        <div class="cm-modal-backdrop" role="presentation" @onclick="CloseDialogs">
+            <section class="cm-modal public-html-dialog" role="dialog" aria-modal="true" aria-labelledby="public-html-upload-title" @onclick:stopPropagation="true">
+                <h2 id="public-html-upload-title">Upload HTML page</h2><p class="dashboard-subtitle">Only .html and .htm files up to 5 MB are accepted. New pages are unpublished.</p>
+                <label for="public-html-file">HTML file</label><InputFile id="public-html-file" OnChange="FileSelected" accept=".html,.htm,text/html" disabled="@_busy" />
+                @if (_file is not null) { <p class="files-empty">@_file.Name · @FormatSize(_file.Size)</p> }
+                <label for="public-html-title">Title</label><input id="public-html-title" maxlength="200" @bind="_title" disabled="@_busy" />
+                <label for="public-html-slug">Slug</label><input id="public-html-slug" maxlength="80" @bind="_slug" disabled="@_busy" />
+                <div class="setup-actions"><button class="files-secondary" @onclick="CloseDialogs" disabled="@_busy">Cancel</button><button class="setup-primary" @onclick="UploadAsync" disabled="@(_busy || _file is null)">Upload page</button></div>
+            </section>
+        </div>
+    }
+    @if (_renameItem is not null)
+    {
+        <div class="cm-modal-backdrop" role="presentation" @onclick="CloseDialogs">
+            <section class="cm-modal public-html-dialog" role="dialog" aria-modal="true" aria-labelledby="public-html-rename-title" @onclick:stopPropagation="true">
+                <h2 id="public-html-rename-title">Rename public URL</h2><p class="dashboard-subtitle">The previous URL stops working immediately after the slug changes.</p>
+                <label for="public-html-new-slug">Slug</label><input id="public-html-new-slug" maxlength="80" @bind="_renameSlug" disabled="@_busy" />
+                <div class="setup-actions"><button class="files-secondary" @onclick="CloseDialogs" disabled="@_busy">Cancel</button><button class="setup-primary" @onclick="RenameAsync" disabled="@_busy">Save slug</button></div>
+            </section>
+        </div>
+    }
+    @if (_deleteItem is not null)
+    {
+        <div class="cm-modal-backdrop" role="presentation" @onclick="CloseDialogs">
+            <section class="cm-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="public-html-delete-title" @onclick:stopPropagation="true">
+                <h2 id="public-html-delete-title">Delete HTML page?</h2><p>This will unpublish <strong>@_deleteItem.Title</strong> and remove its stored content. The public URL will return 404.</p>
+                <div class="setup-actions"><button class="files-secondary" @onclick="CloseDialogs" disabled="@_busy">Cancel</button><button class="files-danger" @onclick="DeleteAsync" disabled="@_busy">Confirm delete</button></div>
+            </section>
+        </div>
+    }
+}
+
+@code {
+    private const long MaxHtmlBytes = 5L * 1024 * 1024;
+    private const int PageSize = 25;
+    private bool _checkingSession = true, _signedIn, _loading, _busy, _uploadOpen;
+    private string _email = "", _message = "", _search = "", _status = "", _title = "", _slug = "", _renameSlug = "";
+    private IBrowserFile? _file;
+    private PublicHtmlItem? _renameItem, _deleteItem;
+    private List<PublicHtmlItem> _items = [];
+    private int _page = 1;
+    private long _total, _published, _unpublished;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/auth/me");
+            if (response.IsSuccessStatusCode)
+            {
+                var session = await response.Content.ReadFromJsonAsync<SessionResponse>();
+                _email = session?.Email ?? "";
+                _signedIn = string.Equals(session?.Role, "Administrator", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(_email);
+            }
+        }
+        catch (HttpRequestException) { _message = "Unable to connect to the server."; }
+        finally { _checkingSession = false; }
+        if (!_signedIn) { Navigation.NavigateTo("/", replace: true); return; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var url = $"api/public-html?page={_page}&pageSize={PageSize}&search={Uri.EscapeDataString(_search.Trim())}&status={Uri.EscapeDataString(_status)}";
+            using var response = await Http.GetAsync(url);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) { Navigation.NavigateTo("/", replace: true); return; }
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<ListResponse>();
+            _items = result?.Items ?? [];
+            _total = result?.Total ?? 0; _published = result?.Published ?? 0; _unpublished = result?.Unpublished ?? 0;
+        }
+        catch (HttpRequestException) { _message = "Unable to load HTML pages. Check server connectivity and permissions."; }
+        finally { _loading = false; }
+    }
+
+    private async Task SearchAsync() { _page = 1; await LoadAsync(); }
+    private void OpenUpload() { _file = null; _title = ""; _slug = ""; _uploadOpen = true; _message = ""; }
+    private void FileSelected(InputFileChangeEventArgs args)
+    {
+        _file = args.File;
+        if (string.IsNullOrWhiteSpace(_title)) _title = Path.GetFileNameWithoutExtension(_file.Name);
+        if (string.IsNullOrWhiteSpace(_slug)) _slug = Slugify(_file.Name);
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_busy || _file is null) return;
+        if (_file.Size is <= 0 or > MaxHtmlBytes) { _message = "HTML files must be between 1 byte and 5 MB."; return; }
+        _busy = true;
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            await using var stream = _file.OpenReadStream(MaxHtmlBytes);
+            using var content = new StreamContent(stream);
+            content.Headers.ContentType = new MediaTypeHeaderValue("text/html");
+            form.Add(content, "file", _file.Name); form.Add(new StringContent(_slug), "slug"); form.Add(new StringContent(_title), "title");
+            using var response = await Http.PostAsync("api/public-html", form);
+            if (!response.IsSuccessStatusCode) { _message = await ErrorMessageAsync(response, "Upload failed."); return; }
+            _message = "HTML page uploaded as unpublished."; _uploadOpen = false; _page = 1; await LoadAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException) { _message = "Unable to upload the selected HTML file."; }
+        finally { _busy = false; }
+    }
+
+    private void OpenRename(PublicHtmlItem item) { _renameItem = item; _renameSlug = item.Slug; _message = ""; }
+    private async Task RenameAsync()
+    {
+        if (_busy || _renameItem is null) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PatchAsJsonAsync($"api/public-html/{_renameItem.Id}/slug", new { slug = _renameSlug });
+            if (!response.IsSuccessStatusCode) { _message = await ErrorMessageAsync(response, "Rename failed."); return; }
+            _message = "Public URL updated."; _renameItem = null; await LoadAsync();
+        }
+        catch (HttpRequestException) { _message = "Unable to rename this page."; }
+        finally { _busy = false; }
+    }
+
+    private async Task TogglePublishAsync(PublicHtmlItem item)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.PutAsJsonAsync($"api/public-html/{item.Id}/publish", new { isPublished = !item.IsPublished });
+            if (!response.IsSuccessStatusCode) { _message = await ErrorMessageAsync(response, "Publish status update failed."); return; }
+            _message = item.IsPublished ? "Page unpublished." : "Page published."; await LoadAsync();
+        }
+        catch (HttpRequestException) { _message = "Unable to update publish status."; }
+        finally { _busy = false; }
+    }
+
+    private void ConfirmDelete(PublicHtmlItem item) { _deleteItem = item; _message = ""; }
+    private async Task DeleteAsync()
+    {
+        if (_busy || _deleteItem is null) return;
+        _busy = true;
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/public-html/{_deleteItem.Id}");
+            if (!response.IsSuccessStatusCode) { _message = await ErrorMessageAsync(response, "Delete failed."); return; }
+            _message = "HTML page deleted."; _deleteItem = null; await LoadAsync();
+        }
+        catch (HttpRequestException) { _message = "Unable to delete this page."; }
+        finally { _busy = false; }
+    }
+
+    private void CloseDialogs() { if (_busy) return; _uploadOpen = false; _renameItem = null; _deleteItem = null; }
+    private async Task PreviousAsync() { if (_page > 1) { _page--; await LoadAsync(); } }
+    private async Task NextAsync() { if (_page * PageSize < _total) { _page++; await LoadAsync(); } }
+    private static string Slugify(string fileName)
+    {
+        var source = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
+        var builder = new System.Text.StringBuilder();
+        var previousHyphen = false;
+        foreach (var character in source)
+        {
+            if (character is >= 'a' and <= 'z' or >= '0' and <= '9') { builder.Append(character); previousHyphen = false; }
+            else if (!previousHyphen && builder.Length > 0) { builder.Append('-'); previousHyphen = true; }
+        }
+        return builder.ToString().Trim('-');
+    }
+    private static string FormatSize(long bytes) => bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024d:0.0} KB" : $"{bytes / (1024d * 1024):0.0} MB";
+    private static async Task<string> ErrorMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        try { var body = await response.Content.ReadFromJsonAsync<ApiError>(); return body?.Message is { Length: > 0 } message ? $"{fallback} {message}" : $"{fallback} (HTTP {(int)response.StatusCode})."; }
+        catch (System.Text.Json.JsonException) { return $"{fallback} (HTTP {(int)response.StatusCode})."; }
+    }
+
+    private sealed record SessionResponse(string Email, string? Role);
+    private sealed record ApiError(string? Message, string? Code);
+    private sealed record ListResponse(List<PublicHtmlItem> Items, long Total, long Published, long Unpublished, int Page, int PageSize);
+    private sealed record PublicHtmlItem(Guid Id, string Title, string Slug, long SizeBytes, bool IsPublished, DateTime? PublishedAtUtc, DateTime? LastViewedAtUtc, DateTime CreatedUtc, DateTime UpdatedUtc);
+}

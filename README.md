@@ -269,3 +269,8 @@ Configure the standalone ContentManagement.FileApi connection on the server, not
 - The main application serializes external quota checks/uploads within its single process. This assumes the documented single-server deployment; multi-instance deployments require a distributed quota reservation mechanism.
 
 The External API must be deployed separately and reachable from the main server. The external API's `/health` endpoint is anonymous and checks process health; file operations require `X-API-Key`. The main server's `/health/ready` check calls the authenticated `GET /api/files/health` endpoint on the configured External File API, so readiness reports unhealthy if the API is unreachable or its API key is rejected. If External File API storage is not configured, this dependency check reports healthy because the provider is optional. `/health/live` remains a liveness-only check and does not probe dependencies.
+
+
+## Public HTML Pages
+
+The administrator dashboard supports uploading and publishing standalone HTML pages. See [Public HTML Pages documentation](docs/public-html-pages.md) for API routes, slug rules, security isolation, storage behavior, and deployment notes.

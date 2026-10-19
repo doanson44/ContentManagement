@@ -835,3 +835,22 @@ a.files-upload-button,
         background: transparent;
     }
 }
+
+
+/* Public HTML Pages */
+.public-html-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:0 0 1.25rem}
+.public-html-stats>div{display:flex;flex-direction:column;gap:.45rem;padding:1.1rem 1.25rem;background:#fff;border:1px solid #e4e7ec;border-radius:12px}
+.public-html-stats span{color:#667085;font-size:.85rem}
+.public-html-stats strong{color:#182230;font-size:1.7rem}
+.public-html-slug{display:block;margin-top:.25rem;color:#667085;overflow-wrap:anywhere}
+.public-html-actions{display:flex;flex-wrap:wrap;gap:.35rem}
+.public-html-actions button,.public-html-action-link{min-height:34px;padding:.35rem .6rem;font-size:.8rem}
+.public-html-action-link{display:inline-flex;align-items:center;text-decoration:none}
+.public-html-published{background:#ecfdf3;color:#027a48}
+.public-html-dialog{display:flex;flex-direction:column;gap:.65rem}
+.public-html-dialog h2{margin:0 0 .25rem}
+.public-html-dialog label{color:#344054;font-size:.875rem;font-weight:650}
+.public-html-dialog input:not([type=file]){width:100%;min-height:42px;padding:.65rem .75rem;border:1px solid #d0d5dd;border-radius:8px;font:inherit}
+.public-html-dialog input[type=file]{width:100%;padding:.6rem 0}
+.public-html-dialog .setup-actions{justify-content:flex-end;margin-top:.75rem}
+@media(max-width:640px){.public-html-stats{grid-template-columns:minmax(0,1fr);gap:.5rem}.public-html-stats>div{padding:.85rem 1rem}.public-html-stats strong{font-size:1.4rem}.public-html-actions{min-width:0}}
