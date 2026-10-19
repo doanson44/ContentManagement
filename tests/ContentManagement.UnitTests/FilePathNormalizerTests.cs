@@ -7,7 +7,7 @@ public sealed class FilePathNormalizerTests
 {
     [Theory]
     [InlineData("products/product-001/image-01.jpg", "products/product-001/image-01.jpg")]
-    [InlineData("products\\\\product-001\\\\image-01.jpg", "products/product-001/image-01.jpg")]
+    [InlineData("products\\product-001\\image-01.jpg", "products/product-001/image-01.jpg")]
     [InlineData("  product-001/image.jpg  ", "product-001/image.jpg")]
     public void TryNormalize_accepts_relative_logical_paths(string input, string expected)
     {
