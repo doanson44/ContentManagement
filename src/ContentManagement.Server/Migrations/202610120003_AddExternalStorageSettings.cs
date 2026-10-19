@@ -4,7 +4,7 @@ using ContentManagement.Server.Data;
 
 #nullable disable
 
-namespace ContentManagement.Server.Data.Migrations;
+namespace ContentManagement.Server.Migrations;
 
 [DbContext(typeof(ContentManagementDbContext))]
 [Migration("202610120003_AddExternalStorageSettings")]

@@ -1,10 +1,11 @@
+using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace ContentManagement.Server.Data.Migrations;
+namespace ContentManagement.Server.Migrations;
 
 [DbContext(typeof(ContentManagementDbContext))]
 [Migration("202610120002_AddFileUploadSource")]

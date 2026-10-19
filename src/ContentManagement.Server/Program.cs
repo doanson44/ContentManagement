@@ -122,6 +122,7 @@ if (hangfireEnabled)
 {
     builder.Services.AddScoped<StaleFileCleanupJob>();
     builder.Services.AddScoped<OrphanFileCleanupJob>();
+    builder.Services.AddScoped<PublicHtmlStorageCleanupJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -324,6 +325,8 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
         "stale-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily());
     recurringJobManager.AddOrUpdate<OrphanFileCleanupJob>(
         "orphan-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(1), TimeZoneInfo.Local);
+    recurringJobManager.AddOrUpdate<PublicHtmlStorageCleanupJob>(
+        "public-html-storage-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly());
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]

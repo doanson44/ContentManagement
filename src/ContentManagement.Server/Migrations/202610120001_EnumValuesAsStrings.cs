@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace ContentManagement.Server.Data.Migrations;
+namespace ContentManagement.Server.Migrations;
 
 [DbContext(typeof(ContentManagementDbContext))]
 [Migration("202610120001_EnumValuesAsStrings")]

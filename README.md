@@ -178,7 +178,7 @@ Use a managed secret provider or protected environment variables for credentials
 
 ## Storage configuration
 
-The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`) and `MaxUploadBytes` (default 100 MiB). JSON documents have no application-configured payload-size limit; Kestrel request-body limiting is disabled. The practical maximum is still bounded by available memory, .NET string/array limits, SQL Server `varbinary(max)` (approximately 2 GB per value), and any IIS/reverse-proxy request limits in front of the app. Size limits should be set at the hosting boundary only when intentionally required to protect capacity. Pending EF Core migrations are applied automatically at server startup.
+The `ContentManagement` section supports `StorageRoot` (filesystem root outside `wwwroot`) and `MaxUploadBytes` (default 100 MiB). If `StorageRoot` is omitted, the default is a sibling `ContentManagement-Data\\files` directory next to the application deployment directory (for example, `D:\\Apps\\ContentManagement-Data\\files` for an app deployed to `D:\\Apps\\ContentManagement`). This keeps binaries persistent across ZIP replacement and avoids Windows temp cleanup policies or protected `LocalApplicationData` paths. The hosting identity must have write access to this sibling directory; otherwise configure `StorageRoot` to a writable persistent path. JSON documents have no application-configured payload-size limit; Kestrel request-body limiting is disabled. The practical maximum is still bounded by available memory, .NET string/array limits, SQL Server `varbinary(max)` (approximately 2 GB per value), and any IIS/reverse-proxy request limits in front of the app. Size limits should be set at the hosting boundary only when intentionally required to protect capacity. Pending EF Core migrations are applied automatically at server startup.
 
 ## Data and storage notes
 
@@ -269,3 +269,8 @@ Configure the standalone ContentManagement.FileApi connection on the server, not
 - The main application serializes external quota checks/uploads within its single process. This assumes the documented single-server deployment; multi-instance deployments require a distributed quota reservation mechanism.
 
 The External API must be deployed separately and reachable from the main server. The external API's `/health` endpoint is anonymous and checks process health; file operations require `X-API-Key`. The main server's `/health/ready` check calls the authenticated `GET /api/files/health` endpoint on the configured External File API, so readiness reports unhealthy if the API is unreachable or its API key is rejected. If External File API storage is not configured, this dependency check reports healthy because the provider is optional. `/health/live` remains a liveness-only check and does not probe dependencies.
+
+
+## Public HTML Pages
+
+The administrator dashboard supports uploading and publishing standalone HTML pages. See [Public HTML Pages documentation](docs/public-html-pages.md) for API routes, slug rules, security isolation, storage behavior, and deployment notes.
