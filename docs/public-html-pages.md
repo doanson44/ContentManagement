@@ -11,7 +11,7 @@ Public HTML Pages allows administrators and API clients with existing file scope
 - Slugs are normalized to lowercase and must contain 1–80 ASCII letters/digits separated by single hyphens.
 - New pages are unpublished by default.
 - Invalid, unpublished, deleted, and missing public pages return 404.
-- Public pages render inside a sandboxed iframe without `allow-same-origin` and use no-referrer behavior.
+- Public pages render inside a sandboxed iframe without `allow-same-origin` and use no-referrer behavior. Inline JavaScript/CSS and external HTTP(S), data, and blob resources are allowed by the content response CSP. The sandbox intentionally prevents the uploaded document from accessing same-origin cookies/storage; browser-extension scripts that try to read `document.cookie` may log a sandbox `SecurityError`.
 - Renaming a slug invalidates the old URL; no redirect alias is retained.
 - Deletion soft-deletes metadata and unpublishes immediately. Failed binary deletion is retried hourly when Hangfire is enabled.
 
