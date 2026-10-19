@@ -1,3 +1,4 @@
+using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +33,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.AdminOtpChallenge", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<string>("CodeHash").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<DateTime?>("ConsumedUtc").HasColumnType("datetime2");
@@ -47,7 +48,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.ApiClient", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<bool>("IsActive").HasColumnType("bit");
             b.Property<string>("ClientId").IsRequired().HasMaxLength(32).HasColumnType("nvarchar(32)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
@@ -64,7 +65,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.PublicHtmlPage", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<bool>("IsDeleted").ValueGeneratedOnAdd().HasColumnType("bit").HasDefaultValue(false);
             b.Property<bool>("IsPublished").ValueGeneratedOnAdd().HasColumnType("bit").HasDefaultValue(false);
@@ -88,7 +89,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.QuickNote", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<string>("Content").IsRequired().HasMaxLength(20000).HasColumnType("nvarchar(max)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<bool>("IsPinned").HasColumnType("bit");
@@ -102,7 +103,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.StoredFile", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<string>("ContentType").IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<string>("FileName").IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
@@ -123,7 +124,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("ContentManagement.Server.Domain.JsonDocumentRecord", b =>
         {
-            b.Property<Guid>("Id").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
             b.Property<string>("Code").IsRequired().HasMaxLength(100).HasColumnType("nvarchar(100)");
             b.Property<long>("CompressedSizeBytes").HasColumnType("bigint");
             b.Property<byte[]>("CompressedPayload").IsRequired().HasColumnType("varbinary(max)");
@@ -155,8 +156,6 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
                 new
                 {
                     Id = 1,
-                    ExternalStoragePreferred = false,
-                    ExternalStorageQuotaBytes = 10737418240L,
                     StaleFileAgeDays = 90
                 });
         });
