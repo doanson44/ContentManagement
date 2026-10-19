@@ -13,6 +13,10 @@ public sealed class ContentManagementOptionsTests
         var isValid = Validator.TryValidateObject(options, new ValidationContext(options), results, true);
         Assert.True(isValid, string.Join("; ", results.Select(result => result.ErrorMessage)));
         Assert.True(Path.IsPathRooted(options.StorageRoot));
+        var deploymentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+        var deploymentParent = deploymentDirectory.Parent?.FullName ?? deploymentDirectory.FullName;
+        var expectedStorageRoot = Path.GetFullPath(Path.Combine(deploymentParent, "ContentManagement-Data", "files"));
+        Assert.Equal(expectedStorageRoot, Path.GetFullPath(options.StorageRoot));
         Assert.True(options.MaxUploadBytes > 0);
     }
     [Fact]
