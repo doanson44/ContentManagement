@@ -1,3 +1,4 @@
+using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
