@@ -6,6 +6,7 @@ using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using ContentManagement.Server.Storage;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -40,7 +41,7 @@ public sealed class FilesController(
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            query = query.Where(f => f.FileName.Contains(term) || f.Sha256 == term);
+            query = query.Where(f => f.FileName.Contains(term) || f.FilePath.Contains(term) || f.Sha256 == term);
         }
         if (status.HasValue) query = query.Where(f => f.Status == status.Value);
         var total = await query.LongCountAsync(cancellationToken);
@@ -48,20 +49,33 @@ public sealed class FilesController(
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(f => new
             {
-                f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+                f.Id, f.FilePath, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
                 f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
             })
             .ToListAsync(cancellationToken);
-        var items = rows.Select(f => new FileListItem(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
+        var items = rows.Select(f => new FileListItem(f.Id, f.FilePath, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
             f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion),
-            $"/api/files/{f.Id}/content")).ToList();
+            $"/api/files/by-path/content?path={Uri.EscapeDataString(f.FilePath)}")).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
     [HttpPost]
     [Authorize(Policy = ScopePolicies.FilesWrite)]
-    public async Task<ActionResult<FileDetails>> Upload(IFormFile? file, CancellationToken cancellationToken)
+    public async Task<ActionResult<FileDetails>> Upload(
+        [FromForm] IFormFile? file,
+        [FromForm] string? filePath,
+        CancellationToken cancellationToken)
     {
+        string? normalizedFilePath = null;
+        if (!string.IsNullOrWhiteSpace(filePath))
+        {
+            if (!FilePathNormalizer.TryNormalize(filePath, out normalizedFilePath))
+                return BadRequest(new { message = "filePath must be a relative path with safe path segments (maximum 450 characters)." });
+
+            if (await db.Files.AsNoTracking().AnyAsync(f => f.FilePath == normalizedFilePath, cancellationToken))
+                return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
+        }
+
         if (file is null || file.Length <= 0) return BadRequest(new { message = "Choose a non-empty file." });
         if (file.Length > options.Value.MaxUploadBytes)
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "File exceeds configured upload limit." });
@@ -112,7 +126,7 @@ public sealed class FilesController(
                             new { message = "External File API returned unexpected file size metadata." });
                     }
 
-                    var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer);
+                    var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer, normalizedFilePath);
                     if (string.IsNullOrWhiteSpace(externalEntity.FileName) || externalEntity.FileName.Length > 255)
                     {
                         try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
@@ -124,10 +138,13 @@ public sealed class FilesController(
                         db.Files.Add(externalEntity);
                         await db.SaveChangesAsync(cancellationToken);
                     }
-                    catch
+                    catch (Exception exception)
                     {
                         try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
                         catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary after metadata persistence failed."); }
+                        if (normalizedFilePath is not null &&
+                            exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+                            return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
                         throw;
                     }
                     return CreatedAtAction(nameof(Get), new { id = externalEntity.Id }, ToDetails(externalEntity));
@@ -146,7 +163,7 @@ public sealed class FilesController(
             catch (InvalidDataException) { return StatusCode(StatusCodes.Status413PayloadTooLarge); }
         }
 
-        var entity = CreateEntity(file, binary, FileUploadSource.Local);
+        var entity = CreateEntity(file, binary, FileUploadSource.Local, normalizedFilePath);
         if (string.IsNullOrWhiteSpace(entity.FileName))
         {
             await storage.DeleteAsync(binary.StorageKey, cancellationToken);
@@ -158,21 +175,27 @@ public sealed class FilesController(
             db.Files.Add(entity);
             await db.SaveChangesAsync(cancellationToken);
         }
-        catch
+        catch (Exception exception)
         {
             try { await storage.DeleteAsync(binary.StorageKey, cancellationToken); }
             catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to clean up orphaned binary after metadata persistence failure."); }
+            if (normalizedFilePath is not null &&
+                exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+                return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
             throw;
         }
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity));
     }
 
-    private StoredFile CreateEntity(IFormFile file, StoredBinary binary, FileUploadSource source)
+    private StoredFile CreateEntity(
+        IFormFile file, StoredBinary binary, FileUploadSource source, string? normalizedFilePath)
     {
         var now = DateTime.UtcNow;
+        var id = Guid.NewGuid();
         return new StoredFile
         {
-            Id = Guid.NewGuid(),
+            Id = id,
+            FilePath = normalizedFilePath ?? $"files/{now:yyyy/MM/dd}/{id:N}",
             FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
             ContentType = ResolveContentType(file.ContentType, file.FileName),
             StorageKey = binary.StorageKey,
@@ -184,6 +207,45 @@ public sealed class FilesController(
             UploadSource = source,
             OwnerId = User.FindFirst("sub")?.Value
         };
+    }
+
+    [HttpGet("by-path")]
+    [Authorize(Policy = ScopePolicies.FilesRead)]
+    public async Task<ActionResult<FileDetails>> GetByPath(
+        [FromQuery, Required] string? path, CancellationToken cancellationToken)
+    {
+        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+            return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
+
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+            f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
+        return file is null ? NotFound() : Ok(ToDetails(file));
+    }
+
+    [HttpGet("by-path/content")]
+    [Authorize(Policy = ScopePolicies.FilesRead)]
+    public async Task<IActionResult> ContentByPath(
+        [FromQuery, Required] string? path, CancellationToken cancellationToken)
+    {
+        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+            return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
+
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+            f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
+        return file is null ? NotFound() : await Content(file.Id, cancellationToken);
+    }
+
+    [HttpGet("by-path/download")]
+    [Authorize(Policy = ScopePolicies.FilesRead)]
+    public async Task<IActionResult> DownloadByPath(
+        [FromQuery, Required] string? path, CancellationToken cancellationToken)
+    {
+        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+            return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
+
+        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+            f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
+        return file is null ? NotFound() : await Download(file.Id, cancellationToken);
     }
 
     [HttpGet("{id:guid}")]
@@ -379,15 +441,15 @@ public sealed class FilesController(
             ? "application/octet-stream" : value;
     }
 
-    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FileName, file.ContentType,
+    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FilePath, file.FileName, file.ContentType,
         file.SizeBytes, file.Sha256, file.Status, file.UploadSource, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
         Convert.ToBase64String(file.RowVersion));
 
-    public sealed record FileListItem(Guid Id, string FileName, string ContentType, long SizeBytes,
+    public sealed record FileListItem(Guid Id, string FilePath, string FileName, string ContentType, long SizeBytes,
         string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc,
         DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
-    public sealed record FileDetails(Guid Id, string FileName, string ContentType, long SizeBytes,
+    public sealed record FileDetails(Guid Id, string FilePath, string FileName, string ContentType, long SizeBytes,
         string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
     public sealed record RenameFileRequest([Required, StringLength(255)] string FileName, string? RowVersion);
 }

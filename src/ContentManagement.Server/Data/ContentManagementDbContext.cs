@@ -107,6 +107,8 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasKey(file => file.Id);
             entity.Property(file => file.Id).ValueGeneratedNever();
             entity.Property(file => file.StorageKey).IsRequired();
+            entity.Property(file => file.FilePath).HasMaxLength(450).IsRequired();
+            entity.HasIndex(file => file.FilePath).IsUnique();
             entity.HasIndex(file => file.StorageKey).IsUnique();
             entity.HasIndex(file => new { file.Status, file.CreatedUtc });
             entity.HasIndex(file => file.OwnerId);
