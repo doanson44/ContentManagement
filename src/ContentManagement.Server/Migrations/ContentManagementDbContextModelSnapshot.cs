@@ -107,6 +107,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("ContentType").IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
             b.Property<DateTime>("CreatedUtc").HasColumnType("datetime2");
             b.Property<string>("FileName").IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
+            b.Property<string>("FilePath").IsRequired().HasMaxLength(450).HasColumnType("nvarchar(450)");
             b.Property<string>("OwnerId").HasMaxLength(200).HasColumnType("nvarchar(200)");
             b.Property<byte[]>("RowVersion").IsRequired().IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
             b.Property<string>("Sha256").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
@@ -116,6 +117,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.Property<FileUploadSource>("UploadSource").ValueGeneratedOnAdd().HasConversion<string>().HasMaxLength(32).IsRequired().HasColumnType("nvarchar(32)").HasDefaultValue(FileUploadSource.Local);
             b.Property<DateTime>("UpdatedUtc").HasColumnType("datetime2");
             b.HasKey("Id");
+            b.HasIndex("FilePath").IsUnique();
             b.HasIndex("OwnerId");
             b.HasIndex("StorageKey").IsUnique();
             b.HasIndex("Status", "CreatedUtc");

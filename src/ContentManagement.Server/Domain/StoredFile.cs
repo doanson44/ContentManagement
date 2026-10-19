@@ -6,6 +6,9 @@ public sealed class StoredFile
 {
     public Guid Id { get; set; }
 
+    [Required, MaxLength(450)]
+    public string FilePath { get; set; } = string.Empty;
+
     [Required, MaxLength(255)]
     public string FileName { get; set; } = string.Empty;
 
