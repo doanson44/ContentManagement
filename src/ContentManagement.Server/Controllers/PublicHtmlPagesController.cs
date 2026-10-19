@@ -194,7 +194,7 @@ public sealed class PublicHtmlPagesController(
         }
         var title = System.Net.WebUtility.HtmlEncode(page.Title);
         var contentUrl = $"/api/public-html/{Uri.EscapeDataString(page.Slug)}/content";
-        var html = $"""
+        var html = $$"""
             <!doctype html>
             <html lang="en"><head>
               <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
