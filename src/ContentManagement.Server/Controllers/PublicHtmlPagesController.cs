@@ -198,10 +198,10 @@ public sealed class PublicHtmlPagesController(
             <!doctype html>
             <html lang="en"><head>
               <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-              <title>{title}</title><meta name="referrer" content="no-referrer">
-              <style>html,body{{margin:0;width:100%;height:100%;overflow:hidden}} iframe{{display:block;width:100%;height:100%;border:0}}</style>
+              <title>{{title}}</title><meta name="referrer" content="no-referrer">
+              <style>html,body{margin:0;width:100%;height:100%;overflow:hidden} iframe{display:block;width:100%;height:100%;border:0}</style>
             </head><body>
-              <iframe title="{title}" src="{contentUrl}" sandbox="allow-scripts allow-forms allow-popups allow-modals" referrerpolicy="no-referrer"></iframe>
+              <iframe title="{{title}}" src="{{contentUrl}}" sandbox="allow-scripts allow-forms allow-popups allow-modals" referrerpolicy="no-referrer"></iframe>
             </body></html>
             """;
         Response.Headers["Cache-Control"] = "no-store";
