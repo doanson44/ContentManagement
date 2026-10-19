@@ -36,4 +36,4 @@ Metadata is in SQL Server and content is stored through the existing `IFileStora
 
 ## Deployment
 
-The application applies EF Core migrations at startup. When Hangfire is enabled, `public-html-storage-cleanup` retries deletion for soft-deleted pages with pending binary cleanup. Back up SQL Server metadata and filesystem content together.
+The application applies EF Core migrations at startup. When Hangfire is enabled, `public-html-storage-cleanup` retries deletion for soft-deleted pages with pending binary cleanup. If no `ContentManagement:StorageRoot` is configured, binaries are stored under the path resolved by `Path.GetTempPath()` plus `ContentManagement/files`, which avoids protected `LocalApplicationData` paths for service identities. This allows ZIP-only deployment in common Windows hosting setups, but host temp cleanup policies may remove data; use a dedicated persistent storage root when possible. Back up SQL Server metadata and filesystem content together.
