@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -40,7 +41,7 @@ public sealed class PublicHtmlPagesIntegrationTests(SqlServerFixture db)
         Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
         var created = await upload.Content.ReadFromJsonAsync<PublicHtmlDetails>();
         Assert.NotNull(created);
-        Assert.Equal(slug, created.Slug); Assert.False(created.IsPublished); Assert.Equal(Encoding.UTF8.GetByteCount(html), created.SizeBytes);
+        Assert.Equal(slug, created.Slug); Assert.False(created.IsPublished); Assert.Equal((long)Encoding.UTF8.GetByteCount(html), created.SizeBytes);
         Assert.Equal(64, created.Sha256.Length);
 
         using var unpublished = await anonymous.GetAsync($"/html/{slug}");
