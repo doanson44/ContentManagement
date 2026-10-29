@@ -182,3 +182,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .proxy-feedback{color:#067647;font-size:.85rem}
 .proxy-icon{background:#e0eaff;color:#1849a9}
 @media(max-width:700px){.proxy-page{padding:1.1rem}.proxy-header{align-items:flex-start;flex-direction:column}.proxy-refresh-button{width:100%}.proxy-summary-grid{grid-template-columns:1fr;gap:.65rem}.proxy-summary-card{padding:.85rem 1rem}.proxy-summary-card strong{font-size:1.4rem}.proxy-list-heading{align-items:flex-start;flex-direction:column}.proxy-copy-all-button{width:100%}.proxy-filters{grid-template-columns:1fr;padding:1rem}.proxy-pagination{align-items:flex-start;flex-direction:column}.proxy-pagination>div{width:100%;justify-content:space-between}.proxy-error{align-items:flex-start;flex-direction:column}.proxy-error button{width:100%}}
+
+
+.proxy-pinned-panel{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:1rem 0;padding:1rem 1.25rem;border:1px solid var(--border-color,#d8dce3);border-radius:12px;background:var(--surface-secondary,#f8fafc)}
+.proxy-pinned-panel>div{display:flex;flex-direction:column;gap:.3rem;min-width:0}
+.proxy-pinned-panel strong{overflow-wrap:anywhere}
+.proxy-pinned-panel small{color:var(--text-secondary,#64748b)}
+.proxy-pinned-label{font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-secondary,#64748b)}
+.proxy-pinned-panel button,.proxy-pin-button{border:1px solid var(--border-color,#cbd5e1);border-radius:7px;padding:.45rem .7rem;background:transparent;cursor:pointer;white-space:nowrap}
+.proxy-row-actions{display:flex;flex-wrap:wrap;gap:.4rem}
+.proxy-pin-button{font-weight:600}
+.proxy-pin-button:disabled{opacity:.65;cursor:default}
+@media(max-width:640px){.proxy-pinned-panel{align-items:flex-start;flex-direction:column}.proxy-row-actions{min-width:130px}}
