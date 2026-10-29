@@ -98,7 +98,10 @@ public sealed class ProxyController(
         var method = new HttpMethod(request.Method.Trim().ToUpperInvariant());
         var query = targetUri!.ToString();
         if (request.QueryParameters is { Count: > 0 })
-            query = QueryHelpers.AddQueryString(query, request.QueryParameters);
+        {
+            var parameters = request.QueryParameters.ToDictionary(pair => pair.Key, pair => (string?)pair.Value);
+            query = QueryHelpers.AddQueryString(query, parameters);
+        }
 
         if (FindHeaderError(method, query, request.Headers) is { } headerError)
             return BadRequest(new ProblemDetails { Title = "Invalid request header", Detail = headerError });
