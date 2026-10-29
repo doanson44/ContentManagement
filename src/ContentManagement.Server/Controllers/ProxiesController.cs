@@ -148,6 +148,7 @@ public sealed class ProxiesController(
 
     private static bool IsPublicAddress(IPAddress ip)
     {
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
         if (IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal) return false;
         if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
