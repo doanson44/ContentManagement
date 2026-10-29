@@ -87,6 +87,20 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.ToTable("PublicHtmlPages");
         });
 
+        modelBuilder.Entity("ContentManagement.Server.Domain.PinnedProxy", b =>
+        {
+            b.Property<int>("Id").ValueGeneratedNever().HasColumnType("int");
+            b.Property<string>("Address").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
+            b.Property<string>("Protocol").IsRequired().HasMaxLength(16).HasColumnType("nvarchar(16)");
+            b.Property<DateTime>("PinnedUtc").HasColumnType("datetime2");
+            b.Property<DateTime?>("LastCheckedUtc").HasColumnType("datetime2");
+            b.Property<long?>("LatencyMilliseconds").HasColumnType("bigint");
+            b.Property<bool?>("IsHealthy").HasColumnType("bit");
+            b.HasKey("Id");
+            b.HasIndex("PinnedUtc");
+            b.ToTable("PinnedProxies");
+        });
+
         modelBuilder.Entity("ContentManagement.Server.Domain.QuickNote", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
