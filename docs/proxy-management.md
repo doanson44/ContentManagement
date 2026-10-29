@@ -68,3 +68,5 @@ The server endpoint requires the existing Administrator role. The upstream URL i
 ```
 
 - The `/dashboard/proxies` page includes a test card for submitting this payload and viewing the upstream status, response headers, response body, latency, and proxy used. Keep credentials and sensitive data out of requests: free public proxies can inspect or alter unencrypted HTTP traffic.
+
+- The relay resolves the pinned proxy from the in-memory `PinnedProxyCache` first; it queries SQL Server only on a cache miss and populates the cache from the database fallback. Pinning and the health/failover job update the same cache snapshot.
