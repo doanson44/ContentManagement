@@ -165,6 +165,8 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Id").ValueGeneratedNever().HasColumnType("int");
             b.Property<long>("ExternalStorageQuotaBytes").HasColumnType("bigint");
             b.Property<bool>("ExternalStoragePreferred").HasColumnType("bit");
+            b.Property<bool>("ProxySwapEnabled").HasColumnType("bit");
+            b.Property<int>("ProxySwapIntervalMinutes").HasColumnType("int");
             b.Property<int>("StaleFileAgeDays").HasColumnType("int");
             b.HasKey("Id");
             b.ToTable("SystemSettings");
@@ -173,6 +175,8 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
                 {
                     Id = 1,
                     ExternalStoragePreferred = false,
+                    ProxySwapEnabled = false,
+                    ProxySwapIntervalMinutes = 60,
                     ExternalStorageQuotaBytes = 10737418240L,
                     StaleFileAgeDays = 90
                 });
