@@ -3,6 +3,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using ContentManagement.Server.Data;
+using ContentManagement.Server.Domain;
+using ContentManagement.Server.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace ContentManagement.Server.Controllers;
 
@@ -12,7 +16,9 @@ namespace ContentManagement.Server.Controllers;
 public sealed class ProxiesController(
     IHttpClientFactory httpClientFactory,
     IMemoryCache memoryCache,
-    ILogger<ProxiesController> logger) : ControllerBase
+    ILogger<ProxiesController> logger,
+    ContentManagementDbContext db,
+    PinnedProxyCache pinnedProxyCache) : ControllerBase
 {
     private const string CacheKey = "proxyscrape:vietnam:protocolipport";
     private const int MaximumResponseBytes = 2 * 1024 * 1024;
@@ -101,6 +107,59 @@ public sealed class ProxiesController(
         }
     }
 
+    [HttpGet("pinned")]
+    public async Task<ActionResult<PinnedProxySnapshot?>> GetPinnedAsync(CancellationToken cancellationToken)
+    {
+        var pinned = await db.PinnedProxies.AsNoTracking().SingleOrDefaultAsync(proxy => proxy.Id == 1, cancellationToken);
+        if (pinned is null) { pinnedProxyCache.Clear(); return Ok((PinnedProxySnapshot?)null); }
+        var snapshot = new PinnedProxySnapshot(pinned.Address, pinned.Protocol, pinned.PinnedUtc, pinned.LastCheckedUtc, pinned.LatencyMilliseconds, pinned.IsHealthy);
+        pinnedProxyCache.Set(snapshot);
+        return Ok(snapshot);
+    }
+
+    [HttpPost("pin")]
+    public async Task<ActionResult<PinnedProxySnapshot>> PinAsync([FromBody] PinProxyRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Address) || !Uri.TryCreate(request.Address.Trim(), UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https" or "socks4" or "socks5") || uri.UserInfo.Length != 0 ||
+            uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.Port is < 1 or > 65535 ||
+            !IPAddress.TryParse(uri.Host, out var ip) || !IsPublicAddress(ip))
+            return BadRequest(new ProblemDetails { Title = "Invalid proxy address", Detail = "Choose a proxy with a public IP address from the list." });
+
+        var protocol = uri.Scheme.ToLowerInvariant();
+        var address = $"{protocol}://{uri.Host}:{uri.Port}";
+        var pinned = await db.PinnedProxies.SingleOrDefaultAsync(proxy => proxy.Id == 1, cancellationToken);
+        var now = DateTime.UtcNow;
+        if (pinned is null)
+        {
+            pinned = new PinnedProxy { Id = 1, Address = address, Protocol = protocol, PinnedUtc = now };
+            db.PinnedProxies.Add(pinned);
+        }
+        else
+        {
+            pinned.Address = address; pinned.Protocol = protocol; pinned.PinnedUtc = now;
+            pinned.LastCheckedUtc = null; pinned.LatencyMilliseconds = null; pinned.IsHealthy = null;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        var snapshot = new PinnedProxySnapshot(pinned.Address, pinned.Protocol, pinned.PinnedUtc, pinned.LastCheckedUtc, pinned.LatencyMilliseconds, pinned.IsHealthy);
+        pinnedProxyCache.Set(snapshot);
+        return Ok(snapshot);
+    }
+
+    private static bool IsPublicAddress(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal) return false;
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = ip.GetAddressBytes();
+            return bytes[0] != 0 && bytes[0] != 10 && bytes[0] != 127 &&
+                !(bytes[0] == 169 && bytes[1] == 254) && !(bytes[0] == 172 && bytes[1] is >= 16 and <= 31) &&
+                !(bytes[0] == 192 && bytes[1] == 168) && !(bytes[0] == 100 && bytes[1] is >= 64 and <= 127) && bytes[0] < 224;
+        }
+        return ip.IsIPv6Global;
+    }
+
+    public sealed record PinProxyRequest(string Address);
     private static void ExtractProxies(JsonElement element, IDictionary<string, ProxyEntry> proxies)
     {
         if (element.ValueKind == JsonValueKind.String)
