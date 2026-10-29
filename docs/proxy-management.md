@@ -33,3 +33,12 @@ The server endpoint requires the existing Administrator role. The upstream URL i
 - If the pinned proxy fails that check or is slower than the threshold, the job checks up to 30 alternatives (up to five concurrently) and pins the fastest eligible candidate. If no candidate qualifies, it retains the existing pin and records its unhealthy result.
 - The health check measures TCP reachability only. It does not perform an HTTP request through the proxy or guarantee that the proxy can relay traffic, support TLS, or preserve privacy. Public proxies remain untrusted.
 - The recurring job is registered only when `Hangfire:Enabled` is true. Ensure Hangfire is enabled and SQL Server is reachable to run scheduled checks.
+
+
+## Configurable proxy rotation
+
+- The administrator Setup page includes an `Enable automatic proxy swap` toggle and interval choices: 15, 30, 45, 60 minutes, 4 hours, 1 day, or 1 week.
+- The setting is persisted in `SystemSettings.ProxySwapEnabled` and `SystemSettings.ProxySwapIntervalMinutes`; the allowed values are validated by the server.
+- The Hangfire job still runs every 15 minutes and checks health on each run. If the pinned proxy is unhealthy or slower than the health threshold, failover is attempted immediately regardless of the rotation toggle.
+- If the current proxy is healthy, scheduled rotation occurs only when automatic swap is enabled and the selected interval has elapsed since `PinnedUtc`—the last manual pin or successful automatic rotation. `LastCheckedUtc` is used only for health-check timestamps and does not reset the rotation interval.
+- If automatic swap is disabled, a healthy proxy is not rotated merely because the interval elapsed.
