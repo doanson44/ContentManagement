@@ -22,3 +22,14 @@ The server endpoint requires the existing Administrator role. The upstream URL i
 - `502`: the upstream provider returned an error, invalid JSON, or a response over the size limit.
 - `504`: the upstream provider did not respond before the timeout.
 - An empty list can mean ProxyScrape currently has no matching Vietnam entries or returned a payload with no supported proxy entries.
+
+
+## Pinning and automatic failover
+
+- The table `PinnedProxies` stores at most one system-wide pinned proxy. Its fixed primary key (`Id = 1`) enforces the singleton at the database level.
+- Use `POST /api/proxies/pin` with `{ "address": "http://203.0.113.10:8080" }` to replace the pin. The current pin is exposed by `GET /api/proxies/pinned`. Both endpoints require the Administrator role.
+- The pinned value is mirrored into the server's in-memory cache without an expiration. Pinning another proxy replaces the cached value; automatic failover does the same. SQL Server remains the durable source of truth across process restarts.
+- When Hangfire is enabled, `PinnedProxyHealthJob` runs every 15 minutes. It checks TCP reachability and connection latency with a four-second per-proxy timeout. A proxy is considered eligible when its TCP port is reachable in 3 seconds or less.
+- If the pinned proxy fails that check or is slower than the threshold, the job checks up to 30 alternatives (up to five concurrently) and pins the fastest eligible candidate. If no candidate qualifies, it retains the existing pin and records its unhealthy result.
+- The health check measures TCP reachability only. It does not perform an HTTP request through the proxy or guarantee that the proxy can relay traffic, support TLS, or preserve privacy. Public proxies remain untrusted.
+- The recurring job is registered only when `Hangfire:Enabled` is true. Ensure Hangfire is enabled and SQL Server is reachable to run scheduled checks.
