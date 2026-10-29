@@ -38,10 +38,35 @@ public sealed class ProxyPool(IOptions<ProxyHealthOptions> options)
     /// <summary>
     /// Returns the best routable entry: verified, not suspect, and within the relay latency budget.
     /// </summary>
-    public ProxyPoolEntry? Best(string? excludeAddress = null)
+    public ProxyPoolEntry? Best(string? excludeAddress = null) =>
+        RankedEntries(excludeAddress, 1).FirstOrDefault();
+
+    /// <summary>
+    /// Orders the proxies to try for a single relay request. The pinned proxy leads while it is
+    /// still routable so the outbound address stays stable; a suspect pin is tried last so a dead
+    /// pin does not cost every request an attempt.
+    /// </summary>
+    public IReadOnlyList<(string Address, string Protocol)> BuildAttemptQueue(
+        string pinnedAddress, string pinnedProtocol, int maximumAttempts)
     {
-        var maximumLatency = options.Value.MaximumRelayLatencyMilliseconds;
+        var attempts = Math.Clamp(maximumAttempts, 1, 5);
+        var pinnedKey = KeyOf(pinnedAddress);
+        var protocol = ProxyAddressRules.IsSupportedScheme(pinnedProtocol) ? pinnedProtocol : "http";
+        bool pinnedSuspect;
+        lock (_gate)
+            pinnedSuspect = _entries.TryGetValue(pinnedKey, out var entry) && entry.SuspectSinceUtc is not null;
+
+        var queue = new List<(string Address, string Protocol)>(attempts);
+        if (!pinnedSuspect) queue.Add((pinnedKey, protocol));
+        queue.AddRange(RankedEntries(pinnedKey, attempts).Select(entry => (entry.Address, entry.Protocol)));
+        if (pinnedSuspect && queue.Count < attempts) queue.Add((pinnedKey, protocol));
+        return queue.Take(attempts).ToArray();
+    }
+
+    private ProxyPoolEntry[] RankedEntries(string? excludeAddress, int limit)
+    {
         var excluded = excludeAddress is null ? null : KeyOf(excludeAddress);
+        var maximumLatency = options.Value.MaximumRelayLatencyMilliseconds;
         lock (_gate)
         {
             return _entries.Values
@@ -52,7 +77,8 @@ public sealed class ProxyPool(IOptions<ProxyHealthOptions> options)
                 .Where(entry => entry.MedianLatencyMilliseconds is null ||
                     entry.MedianLatencyMilliseconds <= maximumLatency)
                 .OrderByDescending(entry => entry.Score)
-                .FirstOrDefault();
+                .Take(limit)
+                .ToArray();
         }
     }
 

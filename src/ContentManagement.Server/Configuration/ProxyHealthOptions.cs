@@ -15,6 +15,17 @@ public sealed class ProxyHealthOptions
     public int MaximumRelayLatencyMilliseconds { get; init; } = 8000;
 
     /// <summary>
+    /// Maximum number of proxies tried for a single relay request: the pinned proxy first,
+    /// then the best verified pool entries.
+    /// </summary>
+    public int MaxRelayAttempts { get; init; } = 3;
+
+    /// <summary>
+    /// Lower bound for one attempt when the remaining request budget is split across attempts.
+    /// </summary>
+    public int MinimumAttemptBudgetSeconds { get; init; } = 5;
+
+    /// <summary>
     /// Number of attempts per health check. Retrying a failed probe absorbs transient
     /// network hiccups; persistent failure is tracked by the pool's failure counter.
     /// </summary>

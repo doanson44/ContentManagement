@@ -143,6 +143,61 @@ public sealed class ProxyPoolTests
         Assert.False(pool.TryRequestRepin());
     }
 
+    [Fact]
+    public void BuildAttemptQueue_StartsWithThePinnedProxy()
+    {
+        var pool = CreatePool();
+        pool.RecordProbe("http://8.8.8.8:8080", "http", new ProxyHealthResult(true, 2000));
+        pool.RecordProbe("socks5://9.9.9.9:1080", "socks5", new ProxyHealthResult(true, 100));
+
+        var queue = pool.BuildAttemptQueue("http://8.8.8.8:8080", "http", maximumAttempts: 3);
+
+        Assert.Equal(2, queue.Count);
+        Assert.Equal("http://8.8.8.8:8080", queue[0].Address);
+        Assert.Equal("socks5://9.9.9.9:1080", queue[1].Address);
+    }
+
+    [Fact]
+    public void BuildAttemptQueue_PutsASuspectPinLast()
+    {
+        var pool = CreatePool();
+        pool.RecordProbe("http://8.8.8.8:8080", "http", new ProxyHealthResult(true, 200));
+        pool.RecordProbe("socks5://9.9.9.9:1080", "socks5", new ProxyHealthResult(true, 300));
+        pool.RecordRelay("http://8.8.8.8:8080", "http", succeeded: false, elapsedMilliseconds: null);
+        pool.RecordRelay("http://8.8.8.8:8080", "http", succeeded: false, elapsedMilliseconds: null);
+
+        var queue = pool.BuildAttemptQueue("http://8.8.8.8:8080", "http", maximumAttempts: 3);
+
+        Assert.Equal("socks5://9.9.9.9:1080", queue[0].Address);
+        Assert.Equal("http://8.8.8.8:8080", queue[^1].Address);
+    }
+
+    [Fact]
+    public void BuildAttemptQueue_FallsBackToThePinWhenThePoolIsEmpty()
+    {
+        var pool = CreatePool();
+
+        var queue = pool.BuildAttemptQueue("http://8.8.8.8:8080", "http", maximumAttempts: 3);
+
+        Assert.Single(queue);
+        Assert.Equal("http://8.8.8.8:8080", queue[0].Address);
+    }
+
+    [Fact]
+    public void BuildAttemptQueue_RespectsTheAttemptLimit()
+    {
+        var pool = CreatePool();
+        pool.RecordProbe("http://8.8.8.8:8080", "http", new ProxyHealthResult(true, 200));
+        pool.RecordProbe("socks5://9.9.9.9:1080", "socks5", new ProxyHealthResult(true, 100));
+        pool.RecordProbe("socks4://7.7.7.7:1080", "socks4", new ProxyHealthResult(true, 300));
+
+        var queue = pool.BuildAttemptQueue("http://8.8.8.8:8080", "http", maximumAttempts: 2);
+
+        Assert.Equal(2, queue.Count);
+        Assert.Equal("http://8.8.8.8:8080", queue[0].Address);
+        Assert.Equal("socks5://9.9.9.9:1080", queue[1].Address);
+    }
+
     private static ProxyPool CreatePool(ProxyHealthOptions? options = null) =>
         new(Microsoft.Extensions.Options.Options.Create(options ?? new ProxyHealthOptions()));
 }

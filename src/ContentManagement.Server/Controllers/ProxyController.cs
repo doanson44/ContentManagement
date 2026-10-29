@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using ContentManagement.Server.Auth;
+using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using ContentManagement.Server.Services;
@@ -11,6 +13,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace ContentManagement.Server.Controllers;
@@ -23,6 +26,7 @@ public sealed class ProxyController(
     PinnedProxyCache pinnedProxyCache,
     ProxyPool proxyPool,
     ProxyRepinTrigger repinTrigger,
+    IOptions<ProxyHealthOptions> healthOptions,
     ILogger<ProxyController> logger) : ControllerBase
 {
     private const int MaximumRequestBodyBytes = 1 * 1024 * 1024;
@@ -86,8 +90,6 @@ public sealed class ProxyController(
             });
         }
 
-        var proxyUri = new Uri(normalizedProxy);
-
         // Do not let the relay become an SSRF path into loopback, private networks, or cloud metadata.
         var targetSafety = await ValidatePublicTargetAsync(targetUri!, cancellationToken);
         if (targetSafety is not null)
@@ -98,132 +100,199 @@ public sealed class ProxyController(
         if (request.QueryParameters is { Count: > 0 })
             query = QueryHelpers.AddQueryString(query, request.QueryParameters);
 
-        if (request.UseCache && method == HttpMethod.Get &&
-            !request.Headers.Keys.Any(key => key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
-                                             key.Equals("Cookie", StringComparison.OrdinalIgnoreCase)))
-        {
-            var cacheKey = BuildCacheKey(query, method, request.Headers);
-            if (memoryCache.TryGetValue(cacheKey, out ProxyResponse? cached) && cached is not null)
-                return Ok(cached with { FromCache = true });
-        }
+        if (FindHeaderError(method, query, request.Headers) is { } headerError)
+            return BadRequest(new ProblemDetails { Title = "Invalid request header", Detail = headerError });
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(request.TimeoutSeconds));
+        var useCache = request.UseCache && method == HttpMethod.Get && !HasCredentialHeaders(request.Headers);
+        var cacheKey = useCache ? BuildCacheKey(query, method, request.Headers) : "";
+        if (useCache && memoryCache.TryGetValue(cacheKey, out ProxyResponse? cached) && cached is not null)
+            return Ok(cached with { FromCache = true });
+
+        // A single pinned proxy is a single point of failure, so each request walks a short queue:
+        // the pin first, then the best verified pool entries. The request timeout is split across
+        // the attempts, which keeps the worst case bounded by what the caller asked for.
+        var attempts = proxyPool.BuildAttemptQueue(pinned.Address, pinned.Protocol, healthOptions.Value.MaxRelayAttempts);
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(request.TimeoutSeconds));
+        var totalBudget = TimeSpan.FromSeconds(request.TimeoutSeconds);
+        var minimumBudget = TimeSpan.FromSeconds(Math.Clamp(healthOptions.Value.MinimumAttemptBudgetSeconds, 1, request.TimeoutSeconds));
         var stopwatch = Stopwatch.StartNew();
+        var attemptsMade = 0;
+        Exception? lastError = null;
 
-        try
+        for (var index = 0; index < attempts.Count; index++)
         {
-            using var handler = ProxyRelay.CreateHandler(proxyUri);
-            using var client = new HttpClient(handler, disposeHandler: false)
-            {
-                Timeout = Timeout.InfiniteTimeSpan
-            };
-            using var message = new HttpRequestMessage(method, query);
-            if (request.Body is not null && method != HttpMethod.Get && method != HttpMethod.Head)
-                message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body));
+            var candidate = attempts[index];
+            if (!Uri.TryCreate(candidate.Address, UriKind.Absolute, out var attemptProxyUri)) continue;
 
-            foreach (var header in request.Headers)
-            {
-                if (BlockedHeaders.Contains(header.Key))
-                    return BadRequest(new ProblemDetails
-                    {
-                        Title = "Invalid request header",
-                        Detail = $"The '{header.Key}' header is controlled by the server and cannot be overridden."
-                    });
+            var remaining = totalBudget - stopwatch.Elapsed;
+            if (remaining <= TimeSpan.Zero) break;
+            var fairShare = remaining.TotalMilliseconds / (attempts.Count - index);
+            var budget = TimeSpan.FromMilliseconds(Math.Min(remaining.TotalMilliseconds,
+                Math.Max(fairShare, minimumBudget.TotalMilliseconds)));
+            attemptsMade++;
 
-                if (!message.Headers.TryAddWithoutValidation(header.Key, header.Value))
+            try
+            {
+                using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(requestTimeout.Token);
+                attemptTimeout.CancelAfter(budget);
+                var response = await SendThroughProxyAsync(
+                    attemptProxyUri, candidate.Address, request, method, query, attemptTimeout.Token);
+
+                proxyPool.RecordRelay(candidate.Address, candidate.Protocol, succeeded: true,
+                    elapsedMilliseconds: response.ElapsedMilliseconds);
+
+                var result = response with { ElapsedMilliseconds = stopwatch.ElapsedMilliseconds };
+                if (attemptsMade > 1)
+                    logger.LogInformation(
+                        "Relayed request for host {TargetHost} through fallback proxy {ProxyAddress} after {Attempts} attempt(s).",
+                        targetUri.Host, candidate.Address, attemptsMade);
+                if (useCache)
+                    memoryCache.Set(cacheKey, result, TimeSpan.FromSeconds(request.CacheDurationSeconds));
+                return Ok(result);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastError = exception;
+                RecordRelayFailure(candidate.Address, candidate.Protocol);
+
+                // Retrying cannot shrink an oversized body and must not replay a write that may
+                // already have reached the target.
+                if (exception is ProxyResponseTooLargeException || !ProxyRetryPolicy.ShouldRetry(method.Method, exception))
                 {
-                    message.Content ??= new ByteArrayContent([]);
-                    if (!message.Content.Headers.TryAddWithoutValidation(header.Key, header.Value))
-                        return BadRequest(new ProblemDetails
-                        {
-                            Title = "Invalid request header",
-                            Detail = $"The '{header.Key}' header is not valid for this request."
-                        });
+                    logger.LogWarning(exception,
+                        "Proxy {ProxyAddress} failed for host {TargetHost}; the attempt is not retryable.",
+                        candidate.Address, targetUri.Host);
+                    break;
                 }
+
+                logger.LogInformation(exception,
+                    "Proxy {ProxyAddress} failed for host {TargetHost}; trying the next verified proxy.",
+                    candidate.Address, targetUri.Host);
             }
-            if (message.Content is not null && !message.Content.Headers.Contains("Content-Type"))
-                message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-
-            using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-
-            // Every relay is a free health sample: a completed exchange proves the proxy works.
-            proxyPool.RecordRelay(pinned.Address, pinned.Protocol, succeeded: true, stopwatch.ElapsedMilliseconds);
-
-            var bodyBytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(timeout.Token),
-                MaximumResponseBodyBytes, timeout.Token);
-            stopwatch.Stop();
-
-            var responseHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var header in response.Headers)
-                responseHeaders[header.Key] = string.Join(", ", header.Value);
-            foreach (var header in response.Content.Headers)
-                responseHeaders[header.Key] = string.Join(", ", header.Value);
-
-            var result = new ProxyResponse(
-                (int)response.StatusCode,
-                response.ReasonPhrase ?? "",
-                response.Content.Headers.ContentType?.ToString(),
-                responseHeaders,
-                Encoding.UTF8.GetString(bodyBytes),
-                stopwatch.ElapsedMilliseconds,
-                pinned.Address,
-                false);
-
-            if (request.UseCache && method == HttpMethod.Get &&
-                !request.Headers.Keys.Any(key => key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
-                                                 key.Equals("Cookie", StringComparison.OrdinalIgnoreCase)))
-            {
-                memoryCache.Set(BuildCacheKey(query, method, request.Headers), result,
-                    TimeSpan.FromSeconds(request.CacheDurationSeconds));
-            }
-
-            return Ok(result);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+        return BuildRelayFailure(lastError, attemptsMade, targetUri, request);
+    }
+
+    private ActionResult<ProxyResponse> BuildRelayFailure(
+        Exception? error, int attemptsMade, Uri target, ProxyRequest request)
+    {
+        switch (error)
         {
-            throw;
-        }
-        catch (OperationCanceledException exception)
-        {
-            logger.LogInformation(exception, "Pinned-proxy request timed out for host {TargetHost}.", targetUri!.Host);
-            RecordRelayFailure(pinned.Address, pinned.Protocol);
-            return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
-            {
-                Title = "Proxy request timed out",
-                Detail = $"The request exceeded the {request.TimeoutSeconds}-second timeout."
-            });
-        }
-        catch (HttpRequestException exception)
-        {
-            logger.LogWarning(exception, "Pinned-proxy request failed for host {TargetHost}.", targetUri!.Host);
-            RecordRelayFailure(pinned.Address, pinned.Protocol);
-            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
-            {
-                Title = "Proxy request failed",
-                Detail = "The pinned proxy could not complete the request. Check its health or pin another proxy."
-            });
-        }
-        catch (ProxyResponseTooLargeException exception)
-        {
-            logger.LogWarning(exception, "Pinned-proxy response exceeded limits for host {TargetHost}.", targetUri!.Host);
-            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
-            {
-                Title = "Invalid proxy response",
-                Detail = "The proxy response exceeded the 2 MiB response limit."
-            });
-        }
-        catch (IOException exception)
-        {
-            logger.LogWarning(exception, "Pinned-proxy connection was lost for host {TargetHost}.", targetUri!.Host);
-            RecordRelayFailure(pinned.Address, pinned.Protocol);
-            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
-            {
-                Title = "Proxy connection lost",
-                Detail = "The pinned proxy closed the connection before the response completed."
-            });
+            case ProxyResponseTooLargeException exception:
+                logger.LogWarning(exception, "Relayed response exceeded limits for host {TargetHost}.", target.Host);
+                return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+                {
+                    Title = "Invalid proxy response",
+                    Detail = "The proxy response exceeded the 2 MiB response limit."
+                });
+            case OperationCanceledException exception:
+                logger.LogInformation(exception, "Proxy request timed out for host {TargetHost} after {Attempts} attempt(s).",
+                    target.Host, attemptsMade);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
+                {
+                    Title = "Proxy request timed out",
+                    Detail = $"The request exceeded the {request.TimeoutSeconds}-second timeout after {attemptsMade} proxy attempt(s)."
+                });
+            case HttpRequestException exception:
+                logger.LogWarning(exception, "No proxy completed the request for host {TargetHost} after {Attempts} attempt(s).",
+                    target.Host, attemptsMade);
+                return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+                {
+                    Title = "Proxy request failed",
+                    Detail = "No available proxy could complete the request. The health job will re-pin a working proxy shortly."
+                });
+            case IOException exception:
+                logger.LogWarning(exception, "Proxy connection was lost for host {TargetHost} after {Attempts} attempt(s).",
+                    target.Host, attemptsMade);
+                return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+                {
+                    Title = "Proxy connection lost",
+                    Detail = "Every attempted proxy closed the connection before the response completed."
+                });
+            default:
+                logger.LogError("No proxy attempt could be started for host {TargetHost}; the pool has no routable entry.", target.Host);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                {
+                    Title = "No proxy available",
+                    Detail = "No verified proxy is available right now. Pin a proxy or wait for the health check to rebuild the pool."
+                });
         }
     }
+
+    private static async Task<ProxyResponse> SendThroughProxyAsync(
+        Uri proxyUri, string proxyAddress, ProxyRequest request, HttpMethod method, string query,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        using var handler = ProxyRelay.CreateHandler(proxyUri);
+        using var client = new HttpClient(handler, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
+        using var message = new HttpRequestMessage(method, query);
+        if (request.Body is not null && method != HttpMethod.Get && method != HttpMethod.Head)
+            message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body));
+        ApplyHeaders(message, request.Headers);
+        if (message.Content is not null && !message.Content.Headers.Contains("Content-Type"))
+            message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var bodyBytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(cancellationToken),
+            MaximumResponseBodyBytes, cancellationToken);
+        stopwatch.Stop();
+
+        var responseHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in response.Headers)
+            responseHeaders[header.Key] = string.Join(", ", header.Value);
+        foreach (var header in response.Content.Headers)
+            responseHeaders[header.Key] = string.Join(", ", header.Value);
+
+        return new ProxyResponse(
+            (int)response.StatusCode,
+            response.ReasonPhrase ?? "",
+            response.Content.Headers.ContentType?.ToString(),
+            responseHeaders,
+            Encoding.UTF8.GetString(bodyBytes),
+            stopwatch.ElapsedMilliseconds,
+            proxyAddress,
+            false);
+    }
+
+    private static string? FindHeaderError(HttpMethod method, string query, IReadOnlyDictionary<string, string> headers)
+    {
+        using var message = new HttpRequestMessage(method, query);
+        foreach (var header in headers)
+        {
+            if (BlockedHeaders.Contains(header.Key))
+                return $"The '{header.Key}' header is controlled by the server and cannot be overridden.";
+
+            if (!message.Headers.TryAddWithoutValidation(header.Key, header.Value))
+            {
+                message.Content ??= new ByteArrayContent([]);
+                if (!message.Content.Headers.TryAddWithoutValidation(header.Key, header.Value))
+                    return $"The '{header.Key}' header is not valid for this request.";
+            }
+        }
+
+        return null;
+    }
+
+    private static void ApplyHeaders(HttpRequestMessage message, IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (var header in headers)
+        {
+            if (message.Headers.TryAddWithoutValidation(header.Key, header.Value)) continue;
+            message.Content ??= new ByteArrayContent([]);
+            message.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+    }
+
+    private static bool HasCredentialHeaders(IReadOnlyDictionary<string, string> headers) =>
+        headers.Keys.Any(key => key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                                key.Equals("Cookie", StringComparison.OrdinalIgnoreCase));
 
     private void RecordRelayFailure(string address, string protocol)
     {

@@ -125,6 +125,7 @@ public sealed class ProxyControllerTests
         var trigger = new ProxyRepinTrigger(
             new UnusedScopeFactory(), pool, NullLogger<ProxyRepinTrigger>.Instance);
         return new ProxyController(db, cache, pinnedCache ?? new PinnedProxyCache(cache), pool, trigger,
+            Microsoft.Extensions.Options.Options.Create(new ProxyHealthOptions()),
             NullLogger<ProxyController>.Instance);
     }
 

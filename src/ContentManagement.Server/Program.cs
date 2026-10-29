@@ -109,6 +109,10 @@ builder.Services.AddOptions<ProxyHealthOptions>()
         "ProxyHealth:MaximumRelayLatencyMilliseconds must be between 1000 and 60000.")
     .Validate(options => options.ProbeSamples is >= 1 and <= 3,
         "ProxyHealth:ProbeSamples must be between 1 and 3.")
+    .Validate(options => options.MaxRelayAttempts is >= 1 and <= 5,
+        "ProxyHealth:MaxRelayAttempts must be between 1 and 5.")
+    .Validate(options => options.MinimumAttemptBudgetSeconds is >= 3 and <= 30,
+        "ProxyHealth:MinimumAttemptBudgetSeconds must be between 3 and 30.")
     .Validate(options => options.PoolSize is >= 3 and <= 50,
         "ProxyHealth:PoolSize must be between 3 and 50.")
     .Validate(options => options.MaxProbesPerRun is >= 1 and <= 50,
