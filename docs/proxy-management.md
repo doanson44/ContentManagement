@@ -15,7 +15,7 @@ The administrator-only Proxy Management page reads the public Vietnam proxy list
 
 ## Security and reliability
 
-The server endpoint requires the existing Administrator role. The upstream URL is fixed in server code; clients cannot supply an arbitrary URL. This avoids turning the endpoint into an SSRF proxy. The endpoint does not connect through the listed proxies or claim that they are healthy. The list is public and volatile; do not send credentials or sensitive information through these endpoints.
+The server endpoint requires the existing Administrator role. The upstream URL is fixed in server code; clients cannot supply an arbitrary URL. This avoids turning the endpoint into an SSRF proxy. The `GET /api/proxies` endpoint only lists proxies and does not test relay capability. The separate `POST /api/proxy` endpoint uses the pinned proxy for outbound requests and applies target URL safeguards. The list is public and volatile; do not send credentials or sensitive information through these endpoints.
 
 ## Troubleshooting
 
