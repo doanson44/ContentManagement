@@ -228,6 +228,12 @@ builder.Services.AddAuthorization(options =>
                 context.User.IsInRole("Administrator") ||
                 context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == scope)));
     }
+
+    options.AddPolicy(ScopePolicies.ProxyRequest, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context =>
+            context.User.IsInRole("Administrator") ||
+            context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == ScopePolicies.ProxyRequest)));
 });
 
 builder.Services.AddRateLimiter(options =>
