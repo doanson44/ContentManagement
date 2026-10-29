@@ -42,3 +42,29 @@ The server endpoint requires the existing Administrator role. The upstream URL i
 - The Hangfire job still runs every 15 minutes and checks health on each run. If the pinned proxy is unhealthy or slower than the health threshold, failover is attempted immediately regardless of the rotation toggle.
 - If the current proxy is healthy, scheduled rotation occurs only when automatic swap is enabled and the selected interval has elapsed since `PinnedUtc`—the last manual pin or successful automatic rotation. `LastCheckedUtc` is used only for health-check timestamps and does not reset the rotation interval.
 - If automatic swap is disabled, a healthy proxy is not rotated merely because the interval elapsed.
+
+
+## Pinned-proxy request API
+
+- Endpoint: `POST /api/proxy` (Administrator role required).
+- The endpoint loads the current pinned proxy from SQL Server and sends the outbound request through it. It does not accept a proxy address from the caller.
+- Supported target methods: `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and `OPTIONS`. Target URLs must use HTTP or HTTPS and resolve only to public IP addresses. Loopback/private-network targets and automatic redirects are blocked.
+- HTTP/HTTPS proxies use the .NET HTTP proxy handler. SOCKS4 and SOCKS5 use a direct SOCKS handshake; SOCKS5 endpoints must permit unauthenticated connections because the pin model does not store proxy credentials.
+- Request body limit is 1 MiB; response body limit is 2 MiB. Timeout must be 1–60 seconds. Cache duration must be 1–3600 seconds. The API returns the upstream status, response headers/body, elapsed time, and pinned proxy address inside its JSON response; a timeout returns HTTP 504 and a failed relay returns HTTP 502.
+- Response caching is opt-in and applies only to GET requests without Authorization or Cookie headers. Cache keys include the target URL, method, and request headers.
+- Example request:
+
+```json
+{
+  "targetUrl": "https://httpbin.org/anything",
+  "method": "GET",
+  "headers": { "Accept": "application/json" },
+  "queryParameters": { "source": "proxy-test" },
+  "body": null,
+  "timeoutSeconds": 15,
+  "useCache": false,
+  "cacheDurationSeconds": 60
+}
+```
+
+- The `/dashboard/proxies` page includes a test card for submitting this payload and viewing the upstream status, response headers, response body, latency, and proxy used. Keep credentials and sensitive data out of requests: free public proxies can inspect or alter unencrypted HTTP traffic.
