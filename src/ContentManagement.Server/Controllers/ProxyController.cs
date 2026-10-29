@@ -95,7 +95,7 @@ public sealed class ProxyController(
             };
             using var message = new HttpRequestMessage(method, query);
             if (request.Body is not null && method != HttpMethod.Get && method != HttpMethod.Head)
-                message.Content = new StringContent(request.Body, Encoding.UTF8, "application/json");
+                message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body));
 
             foreach (var header in request.Headers)
             {
@@ -117,6 +117,8 @@ public sealed class ProxyController(
                         });
                 }
             }
+            if (message.Content is not null && !message.Content.Headers.Contains("Content-Type"))
+                message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             var bodyBytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(timeout.Token),
@@ -219,6 +221,12 @@ public sealed class ProxyController(
         if (request.Body is { Length: > MaximumRequestBodyBytes })
         {
             error = "Body cannot exceed 1 MiB.";
+            return false;
+        }
+
+        if (request.Headers is null || request.QueryParameters is null)
+        {
+            error = "Headers and QueryParameters must be JSON objects (use empty objects when not needed).";
             return false;
         }
 
