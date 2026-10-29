@@ -194,3 +194,90 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .proxy-pin-button{font-weight:600}
 .proxy-pin-button:disabled{opacity:.65;cursor:default}
 @media(max-width:640px){.proxy-pinned-panel{align-items:flex-start;flex-direction:column}.proxy-row-actions{min-width:130px}}
+
+
+/* Proxy management: respect the operating system's dark appearance. */
+@media (prefers-color-scheme: dark) {
+  .proxy-page {
+    color-scheme: dark;
+    color: #e5e7eb;
+  }
+  .proxy-page .proxy-header h1,
+  .proxy-page .proxy-list-heading h2,
+  .proxy-page .proxy-summary-card strong,
+  .proxy-page .proxy-pinned-panel strong {
+    color: #f3f4f6;
+  }
+  .proxy-page .dashboard-eyebrow,
+  .proxy-page .dashboard-subtitle,
+  .proxy-page .proxy-summary-card span,
+  .proxy-page .proxy-list-heading p,
+  .proxy-page .proxy-pinned-panel small,
+  .proxy-page .proxy-pinned-label,
+  .proxy-page .proxy-pagination,
+  .proxy-page .proxy-empty-state {
+    color: #9ca3af;
+  }
+  .proxy-page .proxy-back-link { color: #93c5fd; }
+  .proxy-page .proxy-notice {
+    border-color: #854d0e;
+    background: #422006;
+    color: #fde68a;
+  }
+  .proxy-page .proxy-pinned-panel,
+  .proxy-page .proxy-summary-card,
+  .proxy-page .proxy-list-panel {
+    border-color: #374151;
+    background: #111827;
+  }
+  .proxy-page .proxy-list-heading,
+  .proxy-page .proxy-filters,
+  .proxy-page .proxy-pagination {
+    border-color: #374151;
+  }
+  .proxy-page .proxy-filters { background: #1f2937; }
+  .proxy-page .proxy-filters label { color: #d1d5db; }
+  .proxy-page .proxy-filters input,
+  .proxy-page .proxy-filters select {
+    border-color: #4b5563;
+    background: #111827;
+    color: #f3f4f6;
+    color-scheme: dark;
+  }
+  .proxy-page .proxy-filters input::placeholder { color: #9ca3af; }
+  .proxy-page .proxy-table th {
+    background: #1f2937;
+    color: #9ca3af;
+  }
+  .proxy-page .proxy-table td { border-color: #374151; }
+  .proxy-page .proxy-table tbody tr:hover { background: #1f2937; }
+  .proxy-page .proxy-table code { color: #e5e7eb; }
+  .proxy-page .proxy-protocol-badge {
+    border-color: #4b5563;
+    background: #1f2937;
+    color: #d1d5db;
+  }
+  .proxy-page .proxy-copy-button,
+  .proxy-page .proxy-pagination button,
+  .proxy-page .proxy-pinned-panel button,
+  .proxy-page .proxy-pin-button {
+    border-color: #4b5563;
+    background: #1f2937;
+    color: #e5e7eb;
+  }
+  .proxy-page .proxy-copy-button:hover,
+  .proxy-page .proxy-pagination button:hover:not(:disabled) {
+    background: #374151;
+  }
+  .proxy-page .proxy-error {
+    border-color: #7f1d1d;
+    background: #450a0a;
+    color: #fecaca;
+  }
+  .proxy-page .proxy-error button {
+    border-color: #991b1b;
+    background: #7f1d1d;
+    color: #fee2e2;
+  }
+  .proxy-page .proxy-feedback { color: #6ee7b7; }
+}
