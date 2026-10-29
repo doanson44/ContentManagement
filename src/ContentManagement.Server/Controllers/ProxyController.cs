@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
+using ContentManagement.Server.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ namespace ContentManagement.Server.Controllers;
 public sealed class ProxyController(
     ContentManagementDbContext db,
     IMemoryCache memoryCache,
+    PinnedProxyCache pinnedProxyCache,
     ILogger<ProxyController> logger) : ControllerBase
 {
     private const int MaximumRequestBodyBytes = 1 * 1024 * 1024;
@@ -44,14 +46,32 @@ public sealed class ProxyController(
         if (!TryValidateRequest(request, out var targetUri, out var validationError))
             return BadRequest(new ProblemDetails { Title = "Invalid proxy request", Detail = validationError });
 
-        var pinned = await db.PinnedProxies.AsNoTracking()
-            .SingleOrDefaultAsync(proxy => proxy.Id == 1, cancellationToken);
+        // Fast path: the pin operation and health job keep this snapshot cache current.
+        // Query SQL Server only when the cache has not been populated yet.
+        var pinned = pinnedProxyCache.Get();
         if (pinned is null)
-            return Conflict(new ProblemDetails
+        {
+            var pinnedEntity = await db.PinnedProxies.AsNoTracking()
+                .SingleOrDefaultAsync(proxy => proxy.Id == 1, cancellationToken);
+            if (pinnedEntity is null)
             {
-                Title = "No proxy is pinned",
-                Detail = "Pin a proxy on the Proxy Management page before sending a test request."
-            });
+                pinnedProxyCache.Clear();
+                return Conflict(new ProblemDetails
+                {
+                    Title = "No proxy is pinned",
+                    Detail = "Pin a proxy on the Proxy Management page before sending a test request."
+                });
+            }
+
+            pinned = new PinnedProxySnapshot(
+                pinnedEntity.Address,
+                pinnedEntity.Protocol,
+                pinnedEntity.PinnedUtc,
+                pinnedEntity.LastCheckedUtc,
+                pinnedEntity.LatencyMilliseconds,
+                pinnedEntity.IsHealthy);
+            pinnedProxyCache.Set(pinned);
+        }
 
         if (!Uri.TryCreate(pinned.Address, UriKind.Absolute, out var proxyUri) ||
             proxyUri.Scheme is not ("http" or "https" or "socks4" or "socks5") ||
