@@ -38,6 +38,24 @@ public sealed class ProxyHealthService(ILogger<ProxyHealthService> logger)
             return new ProxyHealthResult(false, null);
         }
     }
+
+    private static bool IsPublicAddress(IPAddress ip)
+    {
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal)
+            return false;
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = ip.GetAddressBytes();
+            return bytes[0] != 0 && bytes[0] != 10 && bytes[0] != 127 &&
+                !(bytes[0] == 169 && bytes[1] == 254) &&
+                !(bytes[0] == 172 && bytes[1] is >= 16 and <= 31) &&
+                !(bytes[0] == 192 && bytes[1] == 168) &&
+                !(bytes[0] == 100 && bytes[1] is >= 64 and <= 127) && bytes[0] < 224;
+        }
+        var bytes6 = ip.GetAddressBytes();
+        return !ip.Equals(IPAddress.IPv6Any) && !(bytes6[0] == 0xFC || bytes6[0] == 0xFD);
+    }
 }
 
 public sealed record ProxyHealthResult(bool IsHealthy, long? LatencyMilliseconds);
