@@ -35,7 +35,10 @@ public sealed class PinnedProxyHealthJob(
         pinned.IsHealthy = currentHealth.IsHealthy;
         await db.SaveChangesAsync(cancellationToken);
 
-        var isHealthy = currentHealth.IsHealthy && currentHealth.LatencyMilliseconds is <= MaximumHealthyLatencyMs;
+        // A reachable TCP endpoint is not classified as dead solely because it is slow.
+        // The latency threshold is used to rank/qualify replacement candidates, not to override
+        // the manual/automatic rotation setting for a proxy that still accepts connections.
+        var isHealthy = currentHealth.IsHealthy;
         var swapIntervalMinutes = settings?.ProxySwapIntervalMinutes ?? 60;
         var swapDue = settings?.ProxySwapEnabled == true &&
                       DateTime.UtcNow - pinned.PinnedUtc >= TimeSpan.FromMinutes(swapIntervalMinutes);
