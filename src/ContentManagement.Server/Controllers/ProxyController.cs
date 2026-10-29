@@ -26,7 +26,7 @@ public sealed class ProxyController(
 {
     private const int MaximumRequestBodyBytes = 1 * 1024 * 1024;
     private const int MaximumResponseBodyBytes = 2 * 1024 * 1024;
-    private const int MaximumTimeoutSeconds = 60;
+    private const int MaximumTimeoutSeconds = 120;
     private const int MaximumCacheDurationSeconds = 3600;
     private static readonly HashSet<string> BlockedHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
