@@ -180,5 +180,5 @@ public sealed class ProxiesController(
     public sealed record ProxyEntry(string Address, string Protocol);
     public sealed record ProxyListResponse(IReadOnlyList<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
 
-    private sealed class ProxyUpstreamException(string message) : Exception(message);
+    private sealed class ProxyUpstreamException(string message) : Exception(message) { }
 }
