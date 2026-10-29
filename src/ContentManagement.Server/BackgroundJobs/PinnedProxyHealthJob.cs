@@ -34,7 +34,7 @@ public sealed class PinnedProxyHealthJob(
         pinned.IsHealthy = currentHealth.IsHealthy;
         await db.SaveChangesAsync(cancellationToken);
 
-        if (currentHealth.IsHealthy && currentHealth.LatencyMilliseconds <= MaximumHealthyLatencyMs)
+        if (currentHealth.IsHealthy && currentHealth.LatencyMilliseconds is <= MaximumHealthyLatencyMs)
         {
             pinnedCache.Set(ToSnapshot(pinned));
             logger.LogInformation("Pinned proxy {ProxyAddress} is healthy at {LatencyMs} ms.",
@@ -93,7 +93,7 @@ public sealed class PinnedProxyHealthJob(
             Extract(document.RootElement, result);
             return result.Values.ToList();
         }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when ((exception is HttpRequestException or JsonException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Unable to fetch proxy candidates for automatic failover.");
             return [];
