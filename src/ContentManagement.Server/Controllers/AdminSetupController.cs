@@ -95,5 +95,7 @@ public sealed class AdminSetupController(
         long ExternalStorageQuotaBytes,
         long ExternalStorageUsedBytes,
         long ExternalStorageRemainingBytes,
-        bool ExternalStoragePreferred);
+        bool ExternalStoragePreferred,
+        bool ProxySwapEnabled,
+        int ProxySwapIntervalMinutes);
 }
