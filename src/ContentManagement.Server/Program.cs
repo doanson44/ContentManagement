@@ -257,6 +257,10 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// Materialize filesystem storage during startup so the configured root exists before
+// Hangfire can execute orphan cleanup or the first upload is accepted.
+_ = app.Services.GetRequiredService<FileSystemStorage>();
+
 try
 {
     await using var migrationScope = app.Services.CreateAsyncScope();
