@@ -1,6 +1,7 @@
 using ContentManagement.Server.Controllers;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
+using ContentManagement.Server.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +18,7 @@ public sealed class ProxyControllerTests
     {
         await using var db = CreateDbContext();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, NullLogger<ProxyController>.Instance);
+        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -47,7 +48,7 @@ public sealed class ProxyControllerTests
         });
         await db.SaveChangesAsync();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, NullLogger<ProxyController>.Instance);
+        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -60,6 +61,26 @@ public sealed class ProxyControllerTests
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
 
+    [Fact]
+    public async Task PostAsync_UsesPinnedProxyCacheBeforeDatabase()
+    {
+        await using var db = CreateDbContext();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var pinnedCache = new PinnedProxyCache(cache);
+        pinnedCache.Set(new PinnedProxySnapshot("http://8.8.8.8:8080", "http", DateTime.UtcNow, null, null, null));
+        var controller = new ProxyController(db, cache, pinnedCache, NullLogger<ProxyController>.Instance);
+
+        var result = await controller.PostAsync(new ProxyController.ProxyRequest
+        {
+            TargetUrl = "http://127.0.0.1/",
+            Method = "GET",
+            TimeoutSeconds = 10,
+            CacheDurationSeconds = 60
+        }, CancellationToken.None);
+
+        // A cached pin is used even though the database has no pinned row.
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
     [Theory]
     [InlineData("TRACE")]
     [InlineData("CONNECT")]
@@ -68,7 +89,7 @@ public sealed class ProxyControllerTests
     {
         await using var db = CreateDbContext();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, NullLogger<ProxyController>.Instance);
+        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
