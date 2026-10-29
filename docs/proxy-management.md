@@ -46,7 +46,8 @@ The server endpoint requires the existing Administrator role. The upstream URL i
 
 ## Pinned-proxy request API
 
-- Endpoint: `POST /api/proxy` (Administrator role required).
+- Endpoint: `POST /api/proxy` (Administrator session or a managed API client granted the `proxy.request` scope).
+- To authorize a machine-to-machine caller, open `/dashboard/api-clients` and grant its API client the `proxy.request` permission. Send the key in the `X-Content-Management-Key` header. The scope is least-privilege and does not grant access to proxy pinning or proxy administration endpoints.
 - The endpoint loads the current pinned proxy from SQL Server and sends the outbound request through it. It does not accept a proxy address from the caller.
 - Supported target methods: `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and `OPTIONS`. Target URLs must use HTTP or HTTPS and resolve only to public IP addresses. Loopback/private-network targets and automatic redirects are blocked.
 - HTTP/HTTPS proxies use the .NET HTTP proxy handler. SOCKS4 and SOCKS5 use a direct SOCKS handshake; SOCKS5 endpoints must permit unauthenticated connections because the pin model does not store proxy credentials.
