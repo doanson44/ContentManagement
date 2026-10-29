@@ -41,6 +41,88 @@
         </div>
     }
 
+    <section class="proxy-test-card" aria-labelledby="proxy-test-title">
+        <div class="proxy-test-heading">
+            <div>
+                <p class="proxy-test-eyebrow">OUTBOUND REQUEST</p>
+                <h2 id="proxy-test-title">Test pinned proxy</h2>
+                <p>Send a request through the currently pinned proxy and inspect the upstream response.</p>
+            </div>
+            <span class="proxy-test-badge">@(_testRunning ? "Request running" : _pinnedProxy is null ? "No proxy pinned" : $"Pinned: {_pinnedProxy.Protocol.ToUpperInvariant()}")</span>
+        </div>
+        <p class="proxy-test-warning">Use only public test endpoints. Public proxies are untrusted; do not submit credentials, cookies, API keys, or personal data.</p>
+        <div class="proxy-test-form">
+            <label class="proxy-test-url">
+                <span>Target URL</span>
+                <input type="url" @bind="_testUrl" placeholder="https://httpbin.org/anything" />
+            </label>
+            <label>
+                <span>Method</span>
+                <select @bind="_testMethod">
+                    <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+                </select>
+            </label>
+            <label>
+                <span>Timeout (seconds)</span>
+                <select @bind="_testTimeoutSeconds">
+                    <option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option>
+                </select>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Query parameters (JSON object)</span>
+                <textarea @bind="_testQueryParametersJson" rows="2" spellcheck="false">{ }</textarea>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Headers (JSON object)</span>
+                <textarea @bind="_testHeadersJson" rows="2" spellcheck="false">{ }</textarea>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Body (text / JSON)</span>
+                <textarea @bind="_testBody" rows="4" placeholder='{"hello":"world"}' spellcheck="false"></textarea>
+            </label>
+            <label class="proxy-test-cache">
+                <input type="checkbox" @bind="_testUseCache" />
+                <span>Cache GET response</span>
+            </label>
+            <label>
+                <span>Cache duration (seconds)</span>
+                <select @bind="_testCacheDurationSeconds" disabled="@(!_testUseCache)">
+                    <option value="15">15</option><option value="30">30</option><option value="60">60</option><option value="300">300</option><option value="900">900</option><option value="3600">3600</option>
+                </select>
+            </label>
+        </div>
+        <div class="proxy-test-actions">
+            <button type="button" class="proxy-refresh-button" @onclick="TestPinnedProxyAsync" disabled="@(_testRunning || _pinnedProxy is null)">
+                @(_testRunning ? "Sending request…" : "Send through pinned proxy")
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_testMessage))
+            {
+                <span class="@(_testFailed ? "proxy-test-result-error" : "proxy-test-result-message")" role="status">@_testMessage</span>
+            }
+        </div>
+        @if (_testResponse is not null)
+        {
+            <div class="proxy-test-response">
+                <div class="proxy-test-response-meta">
+                    <strong>Upstream status: @_testResponse.StatusCode @_testResponse.ReasonPhrase</strong>
+                    <span>@_testResponse.ElapsedMilliseconds ms · proxy @_testResponse.UsedProxy @(_testResponse.FromCache ? "· cached" : "")</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_testResponse.ContentType))
+                {
+                    <p class="proxy-test-content-type">Content-Type: @_testResponse.ContentType</p>
+                }
+                <details>
+                    <summary>Response headers (@_testResponse.Headers.Count)</summary>
+                    <pre>@System.Text.Json.JsonSerializer.Serialize(_testResponse.Headers, JsonPrettyOptions)</pre>
+                </details>
+                <label class="proxy-test-body-label">
+                    <span>Response body</span>
+                    <pre>@_testResponse.Body</pre>
+                </label>
+            </div>
+        }
+    </section>
+
     <section class="proxy-summary-grid" aria-label="Proxy list summary">
         <article class="proxy-summary-card"><span>Fetched proxies</span><strong>@_proxies.Count</strong></article>
         <article class="proxy-summary-card"><span>Matching filters</span><strong>@FilteredProxies.Count()</strong></article>
@@ -191,6 +273,19 @@
     private DateTimeOffset? _fetchedAt;
     private PinnedProxyResponse? _pinnedProxy;
     private bool _pinning;
+    private string _testUrl = "https://httpbin.org/anything";
+    private string _testMethod = "GET";
+    private string _testBody = "";
+    private string _testHeadersJson = "{}";
+    private string _testQueryParametersJson = "{}";
+    private int _testTimeoutSeconds = 15;
+    private bool _testUseCache;
+    private int _testCacheDurationSeconds = 60;
+    private bool _testRunning;
+    private bool _testFailed;
+    private string _testMessage = "";
+    private ProxyTestResponse? _testResponse;
+    private static readonly System.Text.Json.JsonSerializerOptions JsonPrettyOptions = new() { WriteIndented = true };
 
     private IEnumerable<string> AvailableCountries => _proxies
         .Select(proxy => Display(proxy.Country, proxy.CountryCode))
@@ -369,6 +464,92 @@
             _pinning = false;
         }
     }
+
+    private async Task TestPinnedProxyAsync()
+    {
+        if (_testRunning || _pinnedProxy is null) return;
+        _testRunning = true;
+        _testFailed = false;
+        _testMessage = "";
+        _testResponse = null;
+        try
+        {
+            var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_testHeadersJson)
+                ?? new Dictionary<string, string>();
+            var queryParameters = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_testQueryParametersJson)
+                ?? new Dictionary<string, string>();
+
+            var payload = new ProxyTestRequest(
+                _testUrl.Trim(),
+                _testMethod,
+                headers,
+                queryParameters,
+                string.IsNullOrEmpty(_testBody) ? null : _testBody,
+                _testTimeoutSeconds,
+                _testUseCache,
+                _testCacheDurationSeconds);
+
+            using var response = await Http.PostAsJsonAsync("api/proxy", payload);
+            if (response.IsSuccessStatusCode)
+            {
+                _testResponse = await response.Content.ReadFromJsonAsync<ProxyTestResponse>();
+                _testMessage = _testResponse is null ? "The server returned an empty response." : "Request completed.";
+                _testFailed = _testResponse is null;
+            }
+            else
+            {
+                var details = await response.Content.ReadAsStringAsync();
+                try
+                {
+                    using var document = System.Text.Json.JsonDocument.Parse(details);
+                    _testMessage = document.RootElement.TryGetProperty("detail", out var detail)
+                        ? detail.GetString() ?? $"Proxy API returned HTTP {(int)response.StatusCode}."
+                        : document.RootElement.TryGetProperty("title", out var title)
+                            ? title.GetString() ?? $"Proxy API returned HTTP {(int)response.StatusCode}."
+                            : $"Proxy API returned HTTP {(int)response.StatusCode}.";
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    _testMessage = $"Proxy API returned HTTP {(int)response.StatusCode}.";
+                }
+                _testFailed = true;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            _testMessage = "Headers and query parameters must each be a valid JSON object with string values.";
+            _testFailed = true;
+        }
+        catch (HttpRequestException)
+        {
+            _testMessage = "Unable to connect to the server. Check your session and try again.";
+            _testFailed = true;
+        }
+        finally
+        {
+            _testRunning = false;
+        }
+    }
+
+    private sealed record ProxyTestRequest(
+        string TargetUrl,
+        string Method,
+        Dictionary<string, string> Headers,
+        Dictionary<string, string> QueryParameters,
+        string? Body,
+        int TimeoutSeconds,
+        bool UseCache,
+        int CacheDurationSeconds);
+
+    private sealed record ProxyTestResponse(
+        int StatusCode,
+        string ReasonPhrase,
+        string? ContentType,
+        Dictionary<string, string> Headers,
+        string Body,
+        long ElapsedMilliseconds,
+        string UsedProxy,
+        bool FromCache);
 
     private async Task CopyOneAsync(string address)
     {
