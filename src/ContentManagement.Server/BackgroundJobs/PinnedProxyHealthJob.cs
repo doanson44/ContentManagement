@@ -27,6 +27,7 @@ public sealed class PinnedProxyHealthJob(
         var pinned = await db.PinnedProxies.SingleOrDefaultAsync(item => item.Id == SingletonId, cancellationToken);
         if (pinned is null) return;
 
+        var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
         var currentHealth = await healthService.CheckAsync(pinned.Address, cancellationToken);
         var checkedAt = DateTime.UtcNow;
         pinned.LastCheckedUtc = checkedAt;
@@ -34,15 +35,26 @@ public sealed class PinnedProxyHealthJob(
         pinned.IsHealthy = currentHealth.IsHealthy;
         await db.SaveChangesAsync(cancellationToken);
 
-        if (currentHealth.IsHealthy && currentHealth.LatencyMilliseconds is <= MaximumHealthyLatencyMs)
+        var isHealthy = currentHealth.IsHealthy && currentHealth.LatencyMilliseconds is <= MaximumHealthyLatencyMs;
+        var swapIntervalMinutes = settings?.ProxySwapIntervalMinutes ?? 60;
+        var swapDue = settings?.ProxySwapEnabled == true &&
+                      DateTime.UtcNow - pinned.PinnedUtc >= TimeSpan.FromMinutes(swapIntervalMinutes);
+
+        if (isHealthy && !swapDue)
         {
             pinnedCache.Set(ToSnapshot(pinned));
-            logger.LogInformation("Pinned proxy {ProxyAddress} is healthy at {LatencyMs} ms.",
-                pinned.Address, currentHealth.LatencyMilliseconds);
+            logger.LogInformation(
+                "Pinned proxy {ProxyAddress} is healthy at {LatencyMs} ms. Automatic swap enabled: {SwapEnabled}; interval: {SwapIntervalMinutes} minutes; due: {SwapDue}.",
+                pinned.Address, currentHealth.LatencyMilliseconds, settings?.ProxySwapEnabled == true,
+                swapIntervalMinutes, swapDue);
             return;
         }
 
-        logger.LogWarning("Pinned proxy {ProxyAddress} is unhealthy or slow; searching for a replacement.", pinned.Address);
+        if (!isHealthy)
+            logger.LogWarning("Pinned proxy {ProxyAddress} is unhealthy or slow; searching for a replacement immediately.", pinned.Address);
+        else
+            logger.LogInformation("Pinned proxy {ProxyAddress} reached its configured swap interval of {SwapIntervalMinutes} minutes; rotating proxy.",
+                pinned.Address, swapIntervalMinutes);
         var candidates = await FetchCandidatesAsync(cancellationToken);
         var ranked = new List<(string Address, string Protocol, long Latency)>();
         using var semaphore = new SemaphoreSlim(5);
