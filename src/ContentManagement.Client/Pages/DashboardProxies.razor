@@ -1,0 +1,588 @@
+@page "/dashboard/proxies"
+@using System.Net.Http.Json
+@using Microsoft.JSInterop
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Proxy Management · ContentManagement</PageTitle>
+
+<div class="proxy-page">
+    <header class="proxy-header">
+        <div>
+            <a class="proxy-back-link" href="/dashboard">← Dashboard</a>
+            <p class="dashboard-eyebrow">ADMINISTRATION</p>
+            <h1>Proxy Management</h1>
+            <p class="dashboard-subtitle">Browse the public Vietnam proxy list supplied by ProxyScrape.</p>
+        </div>
+        <button class="proxy-refresh-button" type="button" @onclick="LoadProxiesAsync" disabled="@_loading">
+            @if (_loading) { <span>Loading…</span> } else { <span>↻ Refresh list</span> }
+        </button>
+    </header>
+
+    <section class="proxy-notice" role="note">
+        <strong>Public proxies are untrusted.</strong>
+        <span>Availability and ownership can change at any time. Do not send credentials, personal data, or other sensitive content through these endpoints.</span>
+    </section>
+
+    <section class="proxy-pinned-panel" aria-live="polite">
+        <div><span class="proxy-pinned-label">Currently pinned proxy</span>
+            @if (_pinnedProxy is null) { <strong>No proxy pinned</strong><small>Pin one proxy to enable automatic health monitoring.</small> }
+            else { <strong>@_pinnedProxy.Address</strong><small>@(_pinnedProxy.IsHealthy is null ? "Health not checked yet" : _pinnedProxy.IsHealthy == true ? $"Relay probe OK · {_pinnedProxy.LatencyMilliseconds} ms" : "Cannot relay traffic") · pinned @_pinnedProxy.PinnedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small> }
+        </div>
+        <button type="button" @onclick="LoadPinnedAsync">Refresh pinned status</button>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="proxy-error" role="alert">
+            <span>@_error</span>
+            <button type="button" @onclick="LoadProxiesAsync" disabled="@_loading">Try again</button>
+        </div>
+    }
+
+    <section class="proxy-test-card" aria-labelledby="proxy-test-title">
+        <div class="proxy-test-heading">
+            <div>
+                <p class="proxy-test-eyebrow">OUTBOUND REQUEST</p>
+                <h2 id="proxy-test-title">Test pinned proxy</h2>
+                <p>Send a request through the currently pinned proxy and inspect the upstream response.</p>
+            </div>
+            <span class="proxy-test-badge">@(_testRunning ? "Request running" : _pinnedProxy is null ? "No proxy pinned" : $"Pinned: {_pinnedProxy.Protocol.ToUpperInvariant()}")</span>
+        </div>
+        <p class="proxy-test-warning">Use only public test endpoints. Public proxies are untrusted; do not submit credentials, cookies, API keys, or personal data.</p>
+        <div class="proxy-test-form">
+            <label class="proxy-test-url">
+                <span>Target URL</span>
+                <input type="url" @bind="_testUrl" placeholder="https://httpbin.org/anything" />
+            </label>
+            <label>
+                <span>Method</span>
+                <select @bind="_testMethod">
+                    <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+                </select>
+            </label>
+            <label>
+                <span>Timeout (seconds)</span>
+                <select @bind="_testTimeoutSeconds">
+                    <option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option><option value="120">120</option>
+                </select>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Query parameters (JSON object)</span>
+                <textarea @bind="_testQueryParametersJson" rows="2" spellcheck="false">{ }</textarea>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Headers (JSON object)</span>
+                <textarea @bind="_testHeadersJson" rows="2" spellcheck="false">{ }</textarea>
+            </label>
+            <label class="proxy-test-wide">
+                <span>Body (text / JSON)</span>
+                <textarea @bind="_testBody" rows="4" placeholder='{"hello":"world"}' spellcheck="false"></textarea>
+            </label>
+            <label class="proxy-test-cache">
+                <input type="checkbox" @bind="_testUseCache" />
+                <span>Cache GET response</span>
+            </label>
+            <label>
+                <span>Cache duration (seconds)</span>
+                <select @bind="_testCacheDurationSeconds" disabled="@(!_testUseCache)">
+                    <option value="15">15</option><option value="30">30</option><option value="60">60</option><option value="300">300</option><option value="900">900</option><option value="3600">3600</option>
+                </select>
+            </label>
+        </div>
+        <div class="proxy-test-actions">
+            <button type="button" class="proxy-refresh-button" @onclick="TestPinnedProxyAsync" disabled="@(_testRunning || _pinnedProxy is null)">
+                @(_testRunning ? "Sending request…" : "Send through pinned proxy")
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_testMessage))
+            {
+                <span class="@(_testFailed ? "proxy-test-result-error" : "proxy-test-result-message")" role="status">@_testMessage</span>
+            }
+        </div>
+        @if (_testResponse is not null)
+        {
+            <div class="proxy-test-response">
+                <div class="proxy-test-response-meta">
+                    <strong>Upstream status: @_testResponse.StatusCode @_testResponse.ReasonPhrase</strong>
+                    <span>@_testResponse.ElapsedMilliseconds ms · proxy @_testResponse.UsedProxy @(_testResponse.FromCache ? "· cached" : "")</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_testResponse.ContentType))
+                {
+                    <p class="proxy-test-content-type">Content-Type: @_testResponse.ContentType</p>
+                }
+                <details>
+                    <summary>Response headers (@_testResponse.Headers.Count)</summary>
+                    <pre>@System.Text.Json.JsonSerializer.Serialize(_testResponse.Headers, JsonPrettyOptions)</pre>
+                </details>
+                <label class="proxy-test-body-label">
+                    <span>Response body</span>
+                    <pre>@_testResponse.Body</pre>
+                </label>
+            </div>
+        }
+    </section>
+
+    <section class="proxy-summary-grid" aria-label="Proxy list summary">
+        <article class="proxy-summary-card"><span>Fetched proxies</span><strong>@_proxies.Count</strong></article>
+        <article class="proxy-summary-card"><span>Matching filters</span><strong>@FilteredProxies.Count()</strong></article>
+        <article class="proxy-summary-card"><span>Protocols</span><strong>@FilteredProtocolsCount</strong></article>
+    </section>
+
+    <section class="proxy-list-panel">
+        <div class="proxy-list-heading">
+            <div><h2>Vietnam proxy list</h2><p>@(_fetchedAt is null ? "Not loaded yet" : $"Last fetched: {_fetchedAt.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss}")</p></div>
+            <button type="button" class="proxy-copy-all-button" @onclick="CopyFilteredAsync" disabled="@(FilteredProxies.Count() == 0)">Copy filtered list</button>
+        </div>
+
+        <div class="proxy-filters proxy-filters-expanded">
+            <label class="proxy-filter-search">
+                <span>Search all fields</span>
+                <input type="search" @bind="_search" @bind:event="oninput" placeholder="IP, country, ISP, ASN…" @bind:after="ResetPage" />
+            </label>
+            <label>
+                <span>Protocol</span>
+                <select @bind="_protocol" @bind:after="ResetPage">
+                    <option value="">All protocols</option>
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                    <option value="socks4">SOCKS4</option>
+                    <option value="socks5">SOCKS5</option>
+                </select>
+            </label>
+            <label>
+                <span>Country</span>
+                <select @bind="_country" @bind:after="ResetPage">
+                    <option value="">All countries</option>
+                    @foreach (var country in AvailableCountries)
+                    {
+                        <option value="@country">@country</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Anonymity</span>
+                <select @bind="_anonymity" @bind:after="ResetPage">
+                    <option value="">All levels</option>
+                    @foreach (var level in AvailableAnonymityLevels)
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>SSL support</span>
+                <select @bind="_ssl" @bind:after="ResetPage">
+                    <option value="">Any</option>
+                    <option value="true">Supported</option>
+                    <option value="false">Not supported</option>
+                </select>
+            </label>
+            <label>
+                <span>Rows per page</span>
+                <select @bind="_pageSize" @bind:after="ResetPage">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </label>
+        </div>
+
+        @if (_loading && _proxies.Count == 0)
+        {
+            <div class="proxy-empty-state">Loading proxy list…</div>
+        }
+        else if (!_loading && _proxies.Count == 0 && string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="proxy-empty-state">No Vietnam proxies were returned by ProxyScrape. Try refreshing later.</div>
+        }
+        else if (FilteredProxies.Count() == 0 && string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="proxy-empty-state">No proxies match the current filters.</div>
+        }
+        else
+        {
+            <div class="proxy-table-wrap">
+                <table class="proxy-table proxy-metadata-table">
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Protocol))">Protocol @SortIndicator(nameof(ProxyEntry.Protocol))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Address))">Proxy address @SortIndicator(nameof(ProxyEntry.Address))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Country))">Country @SortIndicator(nameof(ProxyEntry.Country))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.City))">City @SortIndicator(nameof(ProxyEntry.City))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Anonymity))">Anonymity @SortIndicator(nameof(ProxyEntry.Anonymity))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.SupportsSsl))">SSL @SortIndicator(nameof(ProxyEntry.SupportsSsl))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.LatencyMilliseconds))">Latency @SortIndicator(nameof(ProxyEntry.LatencyMilliseconds))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.UptimePercent))">Uptime @SortIndicator(nameof(ProxyEntry.UptimePercent))</button></th>
+                            <th>ISP / ASN</th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.LastChecked))">Last checked @SortIndicator(nameof(ProxyEntry.LastChecked))</button></th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var proxy in PagedProxies)
+                        {
+                            <tr @key="proxy.Address">
+                                <td><span class="proxy-protocol-badge">@proxy.Protocol.ToUpperInvariant()</span></td>
+                                <td><code>@proxy.Address</code></td>
+                                <td>@Display(proxy.Country, proxy.CountryCode)</td>
+                                <td>@Display(proxy.City)</td>
+                                <td>@Display(proxy.Anonymity)</td>
+                                <td>@(proxy.SupportsSsl is null ? "—" : proxy.SupportsSsl.Value ? "Yes" : "No")</td>
+                                <td>@(proxy.LatencyMilliseconds is null ? "—" : $"{proxy.LatencyMilliseconds.Value:0.##} ms")</td>
+                                <td>@(proxy.UptimePercent is null ? "—" : $"{proxy.UptimePercent.Value:0.##}%")</td>
+                                <td>@Display(proxy.Isp, proxy.Asn)</td>
+                                <td>@(proxy.LastChecked is null ? "—" : proxy.LastChecked.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                                <td class="proxy-row-actions"><button class="proxy-copy-button" type="button" @onclick="() => CopyOneAsync(proxy.Address)">Copy</button><button class="proxy-pin-button" type="button" @onclick="() => PinProxyAsync(proxy)" disabled="@(_pinning || string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase))">@(string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase) ? "Pinned" : "Pin proxy")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <footer class="proxy-pagination">
+                <span>Showing @ShowingStart–@ShowingEnd of @FilteredProxies.Count() proxies</span>
+                <div>
+                    <button type="button" @onclick="PreviousPage" disabled="@(_page <= 1)">Previous</button>
+                    <span>Page @_page of @TotalPages</span>
+                    <button type="button" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+                </div>
+            </footer>
+        }
+    </section>
+    @if (!string.IsNullOrWhiteSpace(_feedback))
+    {
+        <p class="proxy-feedback" role="status">@_feedback</p>
+    }
+</div>
+
+@code {
+    private List<ProxyEntry> _proxies = [];
+    private bool _loading;
+    private string _error = "";
+    private string _feedback = "";
+    private string _search = "";
+    private string _protocol = "";
+    private string _country = "";
+    private string _anonymity = "";
+    private string _ssl = "";
+    private string _sortColumn = nameof(ProxyEntry.Protocol);
+    private bool _sortDescending;
+    private int _page = 1;
+    private int _pageSize = 20;
+    private DateTimeOffset? _fetchedAt;
+    private PinnedProxyResponse? _pinnedProxy;
+    private bool _pinning;
+    private string _testUrl = "https://httpbin.org/anything";
+    private string _testMethod = "GET";
+    private string _testBody = "";
+    private string _testHeadersJson = "{}";
+    private string _testQueryParametersJson = "{}";
+    private int _testTimeoutSeconds = 30;
+    private bool _testUseCache;
+    private int _testCacheDurationSeconds = 60;
+    private bool _testRunning;
+    private bool _testFailed;
+    private string _testMessage = "";
+    private ProxyTestResponse? _testResponse;
+    private static readonly System.Text.Json.JsonSerializerOptions JsonPrettyOptions = new() { WriteIndented = true };
+
+    private IEnumerable<string> AvailableCountries => _proxies
+        .Select(proxy => Display(proxy.Country, proxy.CountryCode))
+        .Where(value => value != "—")
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<string> AvailableAnonymityLevels => _proxies
+        .Where(proxy => !string.IsNullOrWhiteSpace(proxy.Anonymity))
+        .Select(proxy => proxy.Anonymity!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<ProxyEntry> FilteredProxies
+    {
+        get
+        {
+            IEnumerable<ProxyEntry> query = _proxies
+                .Where(proxy => string.IsNullOrWhiteSpace(_protocol) || proxy.Protocol.Equals(_protocol, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_country) || Display(proxy.Country, proxy.CountryCode).Equals(_country, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_anonymity) || string.Equals(proxy.Anonymity, _anonymity, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_ssl) || (proxy.SupportsSsl?.ToString().ToLowerInvariant() == _ssl))
+                .Where(proxy => string.IsNullOrWhiteSpace(_search) || SearchableText(proxy).Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            IOrderedEnumerable<ProxyEntry> ordered = _sortColumn switch
+            {
+                nameof(ProxyEntry.Address) => Order(query, proxy => proxy.Address),
+                nameof(ProxyEntry.Country) => Order(query, proxy => Display(proxy.Country, proxy.CountryCode)),
+                nameof(ProxyEntry.City) => Order(query, proxy => proxy.City),
+                nameof(ProxyEntry.Anonymity) => Order(query, proxy => proxy.Anonymity),
+                nameof(ProxyEntry.SupportsSsl) => Order(query, proxy => proxy.SupportsSsl),
+                nameof(ProxyEntry.LatencyMilliseconds) => Order(query, proxy => proxy.LatencyMilliseconds),
+                nameof(ProxyEntry.UptimePercent) => Order(query, proxy => proxy.UptimePercent),
+                nameof(ProxyEntry.LastChecked) => Order(query, proxy => proxy.LastChecked),
+                _ => Order(query, proxy => proxy.Protocol)
+            };
+            return ordered;
+        }
+    }
+
+    private IOrderedEnumerable<ProxyEntry> Order<TKey>(IEnumerable<ProxyEntry> query, Func<ProxyEntry, TKey> selector) =>
+        _sortDescending
+            ? query.OrderByDescending(selector, Comparer<TKey>.Default)
+            : query.OrderBy(selector, Comparer<TKey>.Default);
+
+    private static string Display(params string?[] values) =>
+        string.Join(" · ", values.Where(value => !string.IsNullOrWhiteSpace(value))).Trim() is { Length: > 0 } text ? text : "—";
+
+    private static string SearchableText(ProxyEntry proxy) => string.Join(" ", new[]
+    {
+        proxy.Address, proxy.Protocol, proxy.Country, proxy.CountryCode, proxy.City, proxy.Anonymity,
+        proxy.SupportsSsl?.ToString(), proxy.LatencyMilliseconds?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        proxy.UptimePercent?.ToString(System.Globalization.CultureInfo.InvariantCulture), proxy.Asn, proxy.Isp,
+        proxy.LastChecked?.ToString("O")
+    }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+            _sortDescending = !_sortDescending;
+        else
+        {
+            _sortColumn = column;
+            _sortDescending = false;
+        }
+        ResetPage();
+    }
+
+    private string SortIndicator(string column) =>
+        _sortColumn != column ? "↕" : _sortDescending ? "↓" : "↑";
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredProxies.Count() / (double)_pageSize));
+    private IEnumerable<ProxyEntry> PagedProxies => FilteredProxies.Skip((_page - 1) * _pageSize).Take(_pageSize);
+    private int ShowingStart => FilteredProxies.Count() == 0 ? 0 : ((_page - 1) * _pageSize) + 1;
+    private int ShowingEnd => Math.Min(_page * _pageSize, FilteredProxies.Count());
+    private int FilteredProtocolsCount => FilteredProxies.Select(proxy => proxy.Protocol).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var sessionResponse = await Http.GetAsync("api/auth/me");
+            if (!sessionResponse.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            var session = await sessionResponse.Content.ReadFromJsonAsync<SessionResponse>();
+            if (!string.Equals(session?.Role, "Administrator", StringComparison.Ordinal))
+            {
+                Navigation.NavigateTo("/dashboard", replace: true);
+                return;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Unable to connect to the server.";
+            return;
+        }
+
+        await LoadProxiesAsync();
+    }
+
+    private async Task LoadProxiesAsync()
+    {
+        if (_loading) return;
+        _loading = true;
+        _error = "";
+        _feedback = "";
+        try
+        {
+            using var response = await Http.GetAsync("api/proxies");
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                Navigation.NavigateTo("/dashboard", replace: true);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<ProxyListResponse>();
+            _proxies = result?.Proxies ?? [];
+            _fetchedAt = result?.FetchedAt;
+            _page = Math.Min(_page, TotalPages);
+            await LoadPinnedAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Unable to retrieve the proxy list. The upstream service may be unavailable; try again shortly.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            _error = "The proxy API returned an unexpected response. Try again later.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadPinnedAsync()
+    {
+        try
+        {
+            _pinnedProxy = await Http.GetFromJsonAsync<PinnedProxyResponse>("api/proxies/pinned");
+        }
+        catch (HttpRequestException)
+        {
+            _feedback = "Unable to retrieve the currently pinned proxy.";
+        }
+    }
+
+    private async Task PinProxyAsync(ProxyEntry proxy)
+    {
+        if (_pinning) return;
+        _pinning = true;
+        _feedback = "";
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/proxies/pin", new { Address = proxy.Address });
+            if (!response.IsSuccessStatusCode)
+            {
+                _feedback = "Unable to pin this proxy. Refresh the list and try again.";
+                return;
+            }
+
+            _pinnedProxy = await response.Content.ReadFromJsonAsync<PinnedProxyResponse>();
+            _feedback = $"Pinned {proxy.Address}. The previous proxy was unpinned.";
+        }
+        catch (HttpRequestException)
+        {
+            _feedback = "Unable to connect to the server to pin this proxy.";
+        }
+        finally
+        {
+            _pinning = false;
+        }
+    }
+
+    private async Task TestPinnedProxyAsync()
+    {
+        if (_testRunning || _pinnedProxy is null) return;
+        _testRunning = true;
+        _testFailed = false;
+        _testMessage = "";
+        _testResponse = null;
+        try
+        {
+            var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_testHeadersJson)
+                ?? new Dictionary<string, string>();
+            var queryParameters = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_testQueryParametersJson)
+                ?? new Dictionary<string, string>();
+
+            var payload = new ProxyTestRequest(
+                _testUrl.Trim(),
+                _testMethod,
+                headers,
+                queryParameters,
+                string.IsNullOrEmpty(_testBody) ? null : _testBody,
+                _testTimeoutSeconds,
+                _testUseCache,
+                _testCacheDurationSeconds);
+
+            using var response = await Http.PostAsJsonAsync("api/proxy", payload);
+            if (response.IsSuccessStatusCode)
+            {
+                _testResponse = await response.Content.ReadFromJsonAsync<ProxyTestResponse>();
+                _testMessage = _testResponse is null ? "The server returned an empty response." : "Request completed.";
+                _testFailed = _testResponse is null;
+            }
+            else
+            {
+                var details = await response.Content.ReadAsStringAsync();
+                try
+                {
+                    using var document = System.Text.Json.JsonDocument.Parse(details);
+                    _testMessage = document.RootElement.TryGetProperty("detail", out var detail)
+                        ? detail.GetString() ?? $"Proxy API returned HTTP {(int)response.StatusCode}."
+                        : document.RootElement.TryGetProperty("title", out var title)
+                            ? title.GetString() ?? $"Proxy API returned HTTP {(int)response.StatusCode}."
+                            : $"Proxy API returned HTTP {(int)response.StatusCode}.";
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    _testMessage = $"Proxy API returned HTTP {(int)response.StatusCode}.";
+                }
+                _testFailed = true;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            _testMessage = "Headers and query parameters must each be a valid JSON object with string values.";
+            _testFailed = true;
+        }
+        catch (HttpRequestException)
+        {
+            _testMessage = "Unable to connect to the server. Check your session and try again.";
+            _testFailed = true;
+        }
+        finally
+        {
+            _testRunning = false;
+        }
+    }
+
+    private sealed record ProxyTestRequest(
+        string TargetUrl,
+        string Method,
+        Dictionary<string, string> Headers,
+        Dictionary<string, string> QueryParameters,
+        string? Body,
+        int TimeoutSeconds,
+        bool UseCache,
+        int CacheDurationSeconds);
+
+    private sealed record ProxyTestResponse(
+        int StatusCode,
+        string ReasonPhrase,
+        string? ContentType,
+        Dictionary<string, string> Headers,
+        string Body,
+        long ElapsedMilliseconds,
+        string UsedProxy,
+        bool FromCache);
+
+    private async Task CopyOneAsync(string address)
+    {
+        var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", address);
+        _feedback = copied ? $"Copied {address}" : "Copy failed. Check browser clipboard permissions.";
+    }
+
+    private async Task CopyFilteredAsync()
+    {
+        var text = string.Join(Environment.NewLine, FilteredProxies.Select(proxy => proxy.Address));
+        if (text.Length == 0) return;
+        var copied = await JS.InvokeAsync<bool>("contentManagementFiles.copyText", text);
+        _feedback = copied ? $"Copied {FilteredProxies.Count()} proxy addresses." : "Copy failed. Check browser clipboard permissions.";
+    }
+
+    private void PreviousPage() { if (_page > 1) _page--; }
+    private void NextPage() { if (_page < TotalPages) _page++; }
+    private void ResetPage() => _page = 1;
+
+    private sealed record SessionResponse(string Email, string? Role, string[]? Permissions = null);
+    private sealed record ProxyEntry(
+        string Address,
+        string Protocol,
+        string? Country = null,
+        string? CountryCode = null,
+        string? City = null,
+        string? Anonymity = null,
+        bool? SupportsSsl = null,
+        double? LatencyMilliseconds = null,
+        double? UptimePercent = null,
+        string? Asn = null,
+        string? Isp = null,
+        DateTimeOffset? LastChecked = null);
+    private sealed record ProxyListResponse(List<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
+    private sealed record PinnedProxyResponse(string Address, string Protocol, DateTime PinnedUtc, DateTime? LastCheckedUtc, long? LatencyMilliseconds, bool? IsHealthy);
+}

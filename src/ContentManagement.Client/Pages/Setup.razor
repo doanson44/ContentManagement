@@ -85,6 +85,41 @@ else if (_signedIn)
                     <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save setup</button>
                 </div>
             </section>
+            <section class="setup-card proxy-swap-setup">
+                <div class="setup-section-heading">
+                    <div class="setup-section-icon">⇄</div>
+                    <div>
+                        <h2>Proxy swap</h2>
+                        <p>Automatically rotate the pinned proxy after a configured interval. Health checks still run every 15 minutes.</p>
+                    </div>
+                </div>
+                <div class="setup-form-grid">
+                    <label class="external-preference">
+                        <span>Enable automatic proxy swap</span>
+                        <input type="checkbox" @bind="_model.ProxySwapEnabled" disabled="@_busy" />
+                        <small>When enabled, a healthy proxy can be rotated after the selected interval. An unhealthy proxy is replaced as soon as a suitable candidate is found.</small>
+                    </label>
+                    <label>Swap interval
+                        <select @bind="_model.ProxySwapIntervalMinutes" disabled="@_busy">
+                            <option value="15">15 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="45">45 minutes</option>
+                            <option value="60">1 hour</option>
+                            <option value="240">4 hours</option>
+                            <option value="1440">1 day</option>
+                            <option value="10080">1 week</option>
+                        </select>
+                        <small>The interval is measured from the last manual pin or automatic proxy rotation, not from the last health check.</small>
+                    </label>
+                </div>
+                <div class="cleanup-warning">
+                    <strong>Scheduling behavior</strong>
+                    <span>The background job runs every 15 minutes. It checks health every run, and rotates a healthy proxy only when automatic swap is enabled and the selected interval has elapsed.</span>
+                </div>
+                <div class="setup-actions">
+                    <button class="setup-primary" @onclick="SaveAsync" disabled="@_busy">Save proxy settings</button>
+                </div>
+            </section>
             @if (_editOpen)
             {
                 <div class="cm-modal-backdrop" role="presentation" @onclick="CloseEdit">
@@ -167,7 +202,9 @@ else
                     ExternalStorageQuotaGb = settings.ExternalStorageQuotaBytes / (1024d * 1024 * 1024),
                     ExternalStorageUsedBytes = settings.ExternalStorageUsedBytes,
                     ExternalStorageRemainingBytes = settings.ExternalStorageRemainingBytes,
-                    ExternalStoragePreferred = settings.ExternalStoragePreferred
+                    ExternalStoragePreferred = settings.ExternalStoragePreferred,
+                    ProxySwapEnabled = settings.ProxySwapEnabled,
+                    ProxySwapIntervalMinutes = settings.ProxySwapIntervalMinutes
                 };
             }
         }
@@ -205,7 +242,9 @@ else
             {
                 StaleFileAgeDays = _model.StaleFileAgeDays,
                 ExternalStorageQuotaBytes = checked((long)Math.Round(_model.ExternalStorageQuotaGb * 1024d * 1024 * 1024)),
-                ExternalStoragePreferred = _model.ExternalStoragePreferred
+                ExternalStoragePreferred = _model.ExternalStoragePreferred,
+                ProxySwapEnabled = _model.ProxySwapEnabled,
+                ProxySwapIntervalMinutes = _model.ProxySwapIntervalMinutes
             });
             if (!response.IsSuccessStatusCode)
             {
@@ -252,11 +291,14 @@ else
         public long ExternalStorageUsedBytes { get; set; }
         public long ExternalStorageRemainingBytes { get; set; }
         public bool ExternalStoragePreferred { get; set; }
+        public bool ProxySwapEnabled { get; set; }
+        public int ProxySwapIntervalMinutes { get; set; } = 60;
     }
 
     private sealed record SessionResponse(string Email, string? Role);
     private sealed record SetupResponse(int StaleFileAgeDays, bool ExternalStorageConfigured,
         long ExternalStorageQuotaBytes, long ExternalStorageUsedBytes,
-        long ExternalStorageRemainingBytes, bool ExternalStoragePreferred);
+        long ExternalStorageRemainingBytes, bool ExternalStoragePreferred,
+        bool ProxySwapEnabled, int ProxySwapIntervalMinutes);
     private sealed record ApiMessage(string? Message);
 }

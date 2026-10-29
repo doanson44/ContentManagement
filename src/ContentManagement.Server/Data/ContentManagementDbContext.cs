@@ -14,6 +14,7 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
     public DbSet<QuickNote> QuickNotes => Set<QuickNote>();
+    public DbSet<PinnedProxy> PinnedProxies => Set<PinnedProxy>();
     public DbSet<PublicHtmlPage> PublicHtmlPages => Set<PublicHtmlPage>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -88,6 +89,16 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasIndex(page => new { page.IsPublished, page.IsDeleted, page.CreatedUtc });
             entity.HasIndex(page => page.LastViewedAtUtc);
             entity.HasIndex(page => page.StorageDeletePending);
+        });
+
+        modelBuilder.Entity<PinnedProxy>(entity =>
+        {
+            entity.ToTable("PinnedProxies");
+            entity.HasKey(proxy => proxy.Id);
+            entity.Property(proxy => proxy.Id).ValueGeneratedNever();
+            entity.Property(proxy => proxy.Address).HasMaxLength(256).IsRequired();
+            entity.Property(proxy => proxy.Protocol).HasMaxLength(16).IsRequired();
+            entity.HasIndex(proxy => proxy.PinnedUtc);
         });
 
         modelBuilder.Entity<QuickNote>(entity =>

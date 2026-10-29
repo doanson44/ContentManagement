@@ -18,7 +18,7 @@ else if (_signedIn)
                 <div>
                     <p class="dashboard-eyebrow">INTEGRATION MANAGEMENT</p>
                     <h1>API clients</h1>
-                    <p class="dashboard-subtitle">Create credentials and grant only the file and JSON permissions each integration requires.</p>
+                    <p class="dashboard-subtitle">Create credentials and grant only the file, JSON, and proxy permissions each integration requires.</p>
                 </div>
                 <div class="setup-actions"><button class="setup-primary" @onclick="OpenCreate" disabled="@_busy">Create API client</button><a class="files-secondary" href="/dashboard">Dashboard</a></div>
             </header>
@@ -144,7 +144,8 @@ else
     private static readonly string[] AvailableScopes =
     [
         "files.read", "files.write", "files.delete",
-        "json.read", "json.write", "json.delete"
+        "json.read", "json.write", "json.delete",
+        "proxy.request"
     ];
 
     private bool _loading = true;
@@ -414,6 +415,7 @@ else
         "json.read" => "List and read JSON documents.",
         "json.write" => "Create and update JSON documents.",
         "json.delete" => "Permanently delete JSON documents.",
+        "proxy.request" => "Send an outbound HTTP/HTTPS request through the system-wide pinned proxy.",
         _ => ""
     };
 

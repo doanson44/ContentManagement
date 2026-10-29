@@ -8,4 +8,5 @@ public static class ScopePolicies
     public const string JsonRead = "json.read";
     public const string JsonWrite = "json.write";
     public const string JsonDelete = "json.delete";
+    public const string ProxyRequest = "proxy.request";
 }

@@ -87,6 +87,20 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.ToTable("PublicHtmlPages");
         });
 
+        modelBuilder.Entity("ContentManagement.Server.Domain.PinnedProxy", b =>
+        {
+            b.Property<int>("Id").ValueGeneratedNever().HasColumnType("int");
+            b.Property<string>("Address").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
+            b.Property<string>("Protocol").IsRequired().HasMaxLength(16).HasColumnType("nvarchar(16)");
+            b.Property<DateTime>("PinnedUtc").HasColumnType("datetime2");
+            b.Property<DateTime?>("LastCheckedUtc").HasColumnType("datetime2");
+            b.Property<long?>("LatencyMilliseconds").HasColumnType("bigint");
+            b.Property<bool?>("IsHealthy").HasColumnType("bit");
+            b.HasKey("Id");
+            b.HasIndex("PinnedUtc");
+            b.ToTable("PinnedProxies");
+        });
+
         modelBuilder.Entity("ContentManagement.Server.Domain.QuickNote", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
@@ -151,6 +165,8 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Id").ValueGeneratedNever().HasColumnType("int");
             b.Property<long>("ExternalStorageQuotaBytes").HasColumnType("bigint");
             b.Property<bool>("ExternalStoragePreferred").HasColumnType("bit");
+            b.Property<bool>("ProxySwapEnabled").HasColumnType("bit");
+            b.Property<int>("ProxySwapIntervalMinutes").HasColumnType("int");
             b.Property<int>("StaleFileAgeDays").HasColumnType("int");
             b.HasKey("Id");
             b.ToTable("SystemSettings");
@@ -159,6 +175,8 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
                 {
                     Id = 1,
                     ExternalStoragePreferred = false,
+                    ProxySwapEnabled = false,
+                    ProxySwapIntervalMinutes = 60,
                     ExternalStorageQuotaBytes = 10737418240L,
                     StaleFileAgeDays = 90
                 });

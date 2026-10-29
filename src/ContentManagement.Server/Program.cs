@@ -5,6 +5,7 @@ using ContentManagement.Server.Configuration;
 using ContentManagement.Server.HealthChecks;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Storage;
+using ContentManagement.Server.Services;
 using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication;
@@ -57,6 +58,11 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient(ProxyDirectoryClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<PinnedProxyCache>();
+builder.Services.AddSingleton<ProxyDirectoryClient>();
+builder.Services.AddSingleton<ProxyHealthService>();
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
 // Persist the Data Protection key ring in SQL Server because hosted environments may not grant
@@ -85,6 +91,17 @@ builder.Services.AddOptions<ContentManagementOptions>()
     .Validate(options => string.IsNullOrWhiteSpace(options.PublicBaseUrl) ||
         (Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var publicBaseUrl) && publicBaseUrl.Scheme == Uri.UriSchemeHttps),
         "ContentManagement:PublicBaseUrl must be an absolute HTTPS URL when configured.")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<ProxyHealthOptions>()
+    .Bind(builder.Configuration.GetSection(ProxyHealthOptions.SectionName))
+    .Validate(options => Uri.TryCreate(options.ProbeUrl, UriKind.Absolute, out var probe) &&
+        (probe.Scheme == Uri.UriSchemeHttps || probe.Scheme == Uri.UriSchemeHttp),
+        "ProxyHealth:ProbeUrl must be an absolute HTTP or HTTPS URL.")
+    .Validate(options => options.ProbeTimeoutSeconds is >= 3 and <= 30,
+        "ProxyHealth:ProbeTimeoutSeconds must be between 3 and 30.")
+    .Validate(options => options.MaximumRelayLatencyMilliseconds is >= 1000 and <= 60000,
+        "ProxyHealth:MaximumRelayLatencyMilliseconds must be between 1000 and 60000.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<AdminAuthOptions>()
@@ -123,6 +140,7 @@ if (hangfireEnabled)
     builder.Services.AddScoped<StaleFileCleanupJob>();
     builder.Services.AddScoped<OrphanFileCleanupJob>();
     builder.Services.AddScoped<PublicHtmlStorageCleanupJob>();
+    builder.Services.AddScoped<PinnedProxyHealthJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -222,6 +240,12 @@ builder.Services.AddAuthorization(options =>
                 context.User.IsInRole("Administrator") ||
                 context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == scope)));
     }
+
+    options.AddPolicy(ScopePolicies.ProxyRequest, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context =>
+            context.User.IsInRole("Administrator") ||
+            context.User.Claims.Any(claim => claim.Type == "scope" && claim.Value == ScopePolicies.ProxyRequest)));
 });
 
 builder.Services.AddRateLimiter(options =>
@@ -250,6 +274,10 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+// Materialize filesystem storage during startup so the configured root exists before
+// Hangfire can execute orphan cleanup or the first upload is accepted.
+_ = app.Services.GetRequiredService<FileSystemStorage>();
 
 try
 {
@@ -327,6 +355,8 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
         "orphan-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(1), TimeZoneInfo.Local);
     recurringJobManager.AddOrUpdate<PublicHtmlStorageCleanupJob>(
         "public-html-storage-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly());
+    recurringJobManager.AddOrUpdate<PinnedProxyHealthJob>(
+        "pinned-proxy-health-check", job => job.ExecuteAsync(CancellationToken.None), "*/15 * * * *");
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]

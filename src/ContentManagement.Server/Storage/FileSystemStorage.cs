@@ -5,9 +5,18 @@ using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.Storage;
 
-public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options) : IFileStorage, IFileStorageInventory
+public sealed class FileSystemStorage : IFileStorage, IFileStorageInventory
 {
-    private readonly string _root = Path.GetFullPath(options.Value.StorageRoot);
+    private readonly string _root;
+
+    public FileSystemStorage(IOptions<ContentManagementOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _root = Path.GetFullPath(options.Value.StorageRoot);
+        // Ensure persistent storage exists as soon as the service is constructed at startup.
+        // If the configured path is inaccessible, fail startup instead of retrying cleanup jobs forever.
+        Directory.CreateDirectory(_root);
+    }
 
     public async Task<StoredBinary> SaveAsync(Stream content, long maxBytes, CancellationToken cancellationToken = default)
     {
@@ -52,6 +61,8 @@ public sealed class FileSystemStorage(IOptions<ContentManagementOptions> options
 
     public IReadOnlyList<StoredFileInventoryItem> ListOrphanCandidates(DateTime olderThanUtc)
     {
+        // Be resilient if the storage directory was removed while the application was running.
+        Directory.CreateDirectory(_root);
         var results = new List<StoredFileInventoryItem>();
         var pending = new Stack<string>();
         pending.Push(_root);

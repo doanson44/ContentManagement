@@ -36,6 +36,8 @@ public sealed class AdminSetupController(
             return BadRequest(new { message = "File age threshold must be between 1 and 3650 days." });
         if (request.ExternalStorageQuotaBytes < 0)
             return BadRequest(new { message = "External storage quota must be zero or greater." });
+        if (request.ProxySwapIntervalMinutes is not (15 or 30 or 45 or 60 or 240 or 1440 or 10080))
+            return BadRequest(new { message = "Proxy swap interval must be 15, 30, 45, 60, 240, 1440, or 10080 minutes." });
         if (request.ExternalStoragePreferred && !_externalStorage.IsConfigured)
             return BadRequest(new
             {
@@ -46,6 +48,8 @@ public sealed class AdminSetupController(
         settings.StaleFileAgeDays = request.StaleFileAgeDays;
         settings.ExternalStorageQuotaBytes = request.ExternalStorageQuotaBytes;
         settings.ExternalStoragePreferred = request.ExternalStoragePreferred;
+        settings.ProxySwapEnabled = request.ProxySwapEnabled;
+        settings.ProxySwapIntervalMinutes = request.ProxySwapIntervalMinutes;
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Administrator updated system setup and external storage preferences.");
@@ -76,12 +80,14 @@ public sealed class AdminSetupController(
         new(settings.StaleFileAgeDays, _externalStorage.IsConfigured,
             settings.ExternalStorageQuotaBytes, usedBytes,
             Math.Max(0, settings.ExternalStorageQuotaBytes - usedBytes),
-            settings.ExternalStoragePreferred);
+            settings.ExternalStoragePreferred, settings.ProxySwapEnabled, settings.ProxySwapIntervalMinutes);
 
     public sealed record UpdateSetupRequest(
         int StaleFileAgeDays,
         long ExternalStorageQuotaBytes,
-        bool ExternalStoragePreferred);
+        bool ExternalStoragePreferred,
+        bool ProxySwapEnabled,
+        int ProxySwapIntervalMinutes);
 
     public sealed record SetupResponse(
         int StaleFileAgeDays,
@@ -89,5 +95,7 @@ public sealed class AdminSetupController(
         long ExternalStorageQuotaBytes,
         long ExternalStorageUsedBytes,
         long ExternalStorageRemainingBytes,
-        bool ExternalStoragePreferred);
+        bool ExternalStoragePreferred,
+        bool ProxySwapEnabled,
+        int ProxySwapIntervalMinutes);
 }
