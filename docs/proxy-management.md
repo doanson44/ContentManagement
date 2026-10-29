@@ -2,7 +2,7 @@
 
 ## Overview
 
-The administrator-only Proxy Management page reads the public Vietnam proxy list from ProxyScrape. The page supports search, protocol filtering, pagination, and copying individual or filtered addresses.
+The administrator-only Proxy Management page reads the public Vietnam proxy list from ProxyScrape. When metadata is included in the upstream JSON response, the server preserves country/country code, city, anonymity, SSL support, latency, uptime, ASN, ISP, and last-checked time. The page displays those fields and supports sorting by table headers, full-field text search, protocol/country/anonymity/SSL filters, pagination, and copying individual or filtered addresses. Metadata omitted by the upstream response is displayed as an em dash rather than inferred.
 
 ## API behavior
 
@@ -11,7 +11,7 @@ The administrator-only Proxy Management page reads the public Vietnam proxy list
 - Upstream: `https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=json&country=vn`
 - The server caches a successful parsed result for 30 seconds.
 - Upstream requests time out after 15 seconds and responses are limited to 2 MiB.
-- The server accepts only IP-address endpoints with HTTP, HTTPS, SOCKS4, or SOCKS5 schemes. Invalid entries are discarded and duplicates are removed.
+- The server accepts only IP-address endpoints with HTTP, HTTPS, SOCKS4, or SOCKS5 schemes. Invalid entries are discarded and duplicates are removed. It parses optional metadata fields when present and remains compatible with address-only JSON entries.
 
 ## Security and reliability
 
