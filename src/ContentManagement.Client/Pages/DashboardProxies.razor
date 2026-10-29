@@ -25,6 +25,14 @@
         <span>Availability and ownership can change at any time. Do not send credentials, personal data, or other sensitive content through these endpoints.</span>
     </section>
 
+    <section class="proxy-pinned-panel" aria-live="polite">
+        <div><span class="proxy-pinned-label">Currently pinned proxy</span>
+            @if (_pinnedProxy is null) { <strong>No proxy pinned</strong><small>Pin one proxy to enable automatic health monitoring.</small> }
+            else { <strong>@_pinnedProxy.Address</strong><small>@(_pinnedProxy.IsHealthy is null ? "Health not checked yet" : _pinnedProxy.IsHealthy == true ? $"TCP reachable · {_pinnedProxy.LatencyMilliseconds} ms" : "Unreachable") · pinned @_pinnedProxy.PinnedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small> }
+        </div>
+        <button type="button" @onclick="LoadPinnedAsync">Refresh pinned status</button>
+    </section>
+
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <div class="proxy-error" role="alert">
@@ -87,14 +95,14 @@
         {
             <div class="proxy-table-wrap">
                 <table class="proxy-table">
-                    <thead><tr><th>Protocol</th><th>Proxy address</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Protocol</th><th>Proxy address</th><th>Actions</th></tr></thead>
                     <tbody>
                         @foreach (var proxy in PagedProxies)
                         {
                             <tr @key="proxy.Address">
                                 <td><span class="proxy-protocol-badge">@proxy.Protocol.ToUpperInvariant()</span></td>
                                 <td><code>@proxy.Address</code></td>
-                                <td><button class="proxy-copy-button" type="button" @onclick="() => CopyOneAsync(proxy.Address)">Copy</button></td>
+                                <td class="proxy-row-actions"><button class="proxy-copy-button" type="button" @onclick="() => CopyOneAsync(proxy.Address)">Copy</button><button class="proxy-pin-button" type="button" @onclick="() => PinProxyAsync(proxy)" disabled="@(_pinning || string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase))">@(string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase) ? "Pinned" : "Pin proxy")</button></td>
                             </tr>
                         }
                     </tbody>
@@ -126,6 +134,8 @@
     private int _page = 1;
     private int _pageSize = 20;
     private DateTimeOffset? _fetchedAt;
+    private PinnedProxyResponse? _pinnedProxy;
+    private bool _pinning;
 
     private IEnumerable<ProxyEntry> FilteredProxies => _proxies
         .Where(proxy => string.IsNullOrWhiteSpace(_protocol) || proxy.Protocol.Equals(_protocol, StringComparison.OrdinalIgnoreCase))
@@ -186,6 +196,7 @@
             _proxies = result?.Proxies ?? [];
             _fetchedAt = result?.FetchedAt;
             _page = Math.Min(_page, TotalPages);
+            await LoadPinnedAsync();
         }
         catch (HttpRequestException)
         {
@@ -198,6 +209,45 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task LoadPinnedAsync()
+    {
+        try
+        {
+            _pinnedProxy = await Http.GetFromJsonAsync<PinnedProxyResponse>("api/proxies/pinned");
+        }
+        catch (HttpRequestException)
+        {
+            _feedback = "Unable to retrieve the currently pinned proxy.";
+        }
+    }
+
+    private async Task PinProxyAsync(ProxyEntry proxy)
+    {
+        if (_pinning) return;
+        _pinning = true;
+        _feedback = "";
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/proxies/pin", new { Address = proxy.Address });
+            if (!response.IsSuccessStatusCode)
+            {
+                _feedback = "Unable to pin this proxy. Refresh the list and try again.";
+                return;
+            }
+
+            _pinnedProxy = await response.Content.ReadFromJsonAsync<PinnedProxyResponse>();
+            _feedback = $"Pinned {proxy.Address}. The previous proxy was unpinned.";
+        }
+        catch (HttpRequestException)
+        {
+            _feedback = "Unable to connect to the server to pin this proxy.";
+        }
+        finally
+        {
+            _pinning = false;
         }
     }
 
@@ -222,4 +272,5 @@
     private sealed record SessionResponse(string Email, string? Role, string[]? Permissions = null);
     private sealed record ProxyEntry(string Address, string Protocol);
     private sealed record ProxyListResponse(List<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
+    private sealed record PinnedProxyResponse(string Address, string Protocol, DateTime PinnedUtc, DateTime? LastCheckedUtc, long? LatencyMilliseconds, bool? IsHealthy);
 }
