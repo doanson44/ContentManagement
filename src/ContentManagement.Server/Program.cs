@@ -5,6 +5,7 @@ using ContentManagement.Server.Configuration;
 using ContentManagement.Server.HealthChecks;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Storage;
+using ContentManagement.Server.Services;
 using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication;
@@ -59,6 +60,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("ProxyScrape", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<PinnedProxyCache>();
+builder.Services.AddSingleton<ProxyHealthService>();
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
 // Persist the Data Protection key ring in SQL Server because hosted environments may not grant
@@ -125,6 +128,7 @@ if (hangfireEnabled)
     builder.Services.AddScoped<StaleFileCleanupJob>();
     builder.Services.AddScoped<OrphanFileCleanupJob>();
     builder.Services.AddScoped<PublicHtmlStorageCleanupJob>();
+    builder.Services.AddScoped<PinnedProxyHealthJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -329,6 +333,8 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
         "orphan-file-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(1), TimeZoneInfo.Local);
     recurringJobManager.AddOrUpdate<PublicHtmlStorageCleanupJob>(
         "public-html-storage-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly());
+    recurringJobManager.AddOrUpdate<PinnedProxyHealthJob>(
+        "pinned-proxy-health-check", job => job.ExecuteAsync(CancellationToken.None), "*/15 * * * *");
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]
