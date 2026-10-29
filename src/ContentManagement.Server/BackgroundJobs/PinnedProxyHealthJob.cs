@@ -87,8 +87,21 @@ public sealed class PinnedProxyHealthJob(
         {
             using var response = await httpClientFactory.CreateClient("ProxyScrape").GetAsync(Upstream, cancellationToken);
             response.EnsureSuccessStatusCode();
+            const int maximumBytes = 2 * 1024 * 1024;
+            if (response.Content.Headers.ContentLength is > maximumBytes)
+                throw new JsonException("Proxy list exceeds the configured size limit.");
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[16 * 1024];
+            while (true)
+            {
+                var read = await stream.ReadAsync(chunk, cancellationToken);
+                if (read == 0) break;
+                if (buffer.Length + read > maximumBytes)
+                    throw new JsonException("Proxy list exceeds the configured size limit.");
+                await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+            }
+            using var document = JsonDocument.Parse(buffer.ToArray());
             var result = new Dictionary<string, (string Address, string Protocol)>(StringComparer.OrdinalIgnoreCase);
             Extract(document.RootElement, result);
             return result.Values.ToList();
