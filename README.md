@@ -10,6 +10,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - EF Core SQL Server context and initial migration for binary metadata and compressed JSON records.
 - GZIP JSON compressor validates JSON, enforces decompressed/uncompressed size limits, and calculates SHA-256 over the original UTF-8 JSON bytes.
 - Filesystem storage streams bytes to a temporary file, enforces a size limit, calculates SHA-256, then atomically renames to a server-generated date-partitioned key.
+- The server creates the configured filesystem storage root during startup; orphan inventory also recreates the root if it is missing while the process is running.
 - Lifecycle status enum and SQL row-version concurrency tokens.
 - File metadata records `UploadSource` (`Local` or `ExternalServer`); uploads authenticated with a managed API key are classified as external-server uploads, while browser/admin uploads are classified as local. Existing rows default to `Local` through an additive migration.
 - All EF Core enum properties are stored in SQL Server as their symbolic string names; the `EnumValuesAsStrings` migration converts existing numeric file/document statuses.
@@ -18,6 +19,8 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - GitHub Actions build/test pipeline and Windows x86 self-contained ZIP packaging.
 - Initial file management API and Blazor WebAssembly page on the `feature/file-management-crud` branch: scoped list/upload/metadata/content/download/rename/soft-delete endpoints, pagination, image/PDF/video previews, bounded text preview, and browser HTTP Range support for media.
 
+
+The default local binary root is a `ContentManagement-Data/files` directory beside the server deployment directory. The directory is created automatically at startup; the account running the server must have permission to create and write to the configured `ContentManagement:StorageRoot`.
 
 ## Orphan binary cleanup
 
