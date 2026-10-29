@@ -227,7 +227,7 @@
                 nameof(ProxyEntry.LastChecked) => Order(query, proxy => proxy.LastChecked),
                 _ => Order(query, proxy => proxy.Protocol)
             };
-            return _sortDescending ? ordered.Reverse() : ordered;
+            return ordered;
         }
     }
 
