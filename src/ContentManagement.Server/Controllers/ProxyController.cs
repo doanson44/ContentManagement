@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ContentManagement.Server.Auth;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using ContentManagement.Server.Services;
@@ -17,7 +18,6 @@ namespace ContentManagement.Server.Controllers;
 
 [ApiController]
 [Route("api/proxy")]
-[Authorize(Roles = "Administrator")]
 public sealed class ProxyController(
     ContentManagementDbContext db,
     IMemoryCache memoryCache,
@@ -35,6 +35,7 @@ public sealed class ProxyController(
     };
 
     [HttpPost]
+    [Authorize(Policy = ScopePolicies.ProxyRequest)]
     [ProducesResponseType<ProxyResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
