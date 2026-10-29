@@ -57,6 +57,8 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient("ProxyScrape", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
 // Persist the Data Protection key ring in SQL Server because hosted environments may not grant

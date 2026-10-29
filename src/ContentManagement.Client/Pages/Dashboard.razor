@@ -103,6 +103,12 @@ else if (_signedIn)
                         <p>Register integrations, assign least-privilege scopes, and rotate or revoke credentials.</p>
                         <div class="module-footer"><span>Integration security</span><span class="module-arrow" aria-hidden="true">↗</span></div>
                     </a>
+                    <a class="module-card module-card-link" href="/dashboard/proxies">
+                        <div class="module-icon proxy-icon">⇄</div>
+                        <div class="module-card-heading"><h3>Proxy Management</h3><span class="module-status">Available</span></div>
+                        <p>Browse Vietnam proxy endpoints from ProxyScrape, filter protocols, and copy addresses.</p>
+                        <div class="module-footer"><span>External proxy list</span><span class="module-arrow" aria-hidden="true">↗</span></div>
+                    </a>
                 </section>
             }
             <footer class="dashboard-footer">ContentManagement <span>·</span> Workspace</footer>
@@ -166,7 +172,7 @@ else
 
     private bool CanAccessFiles => HasAnyPermission("files.read", "files.write", "files.delete");
     private bool CanAccessJson => HasAnyPermission("json.read", "json.write", "json.delete");
-    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0) + (_isAdministrator ? 3 : 0);
+    private int VisibleModuleCount => (CanAccessFiles ? 1 : 0) + (CanAccessJson ? 1 : 0) + (_isAdministrator ? 5 : 0);
 
     private bool HasAnyPermission(params string[] requiredPermissions) =>
         _isAdministrator || _permissions.Any(permission =>
