@@ -28,7 +28,7 @@
     <section class="proxy-pinned-panel" aria-live="polite">
         <div><span class="proxy-pinned-label">Currently pinned proxy</span>
             @if (_pinnedProxy is null) { <strong>No proxy pinned</strong><small>Pin one proxy to enable automatic health monitoring.</small> }
-            else { <strong>@_pinnedProxy.Address</strong><small>@(_pinnedProxy.IsHealthy is null ? "Health not checked yet" : _pinnedProxy.IsHealthy == true ? $"TCP reachable · {_pinnedProxy.LatencyMilliseconds} ms" : "Unreachable") · pinned @_pinnedProxy.PinnedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small> }
+            else { <strong>@_pinnedProxy.Address</strong><small>@(_pinnedProxy.IsHealthy is null ? "Health not checked yet" : _pinnedProxy.IsHealthy == true ? $"Relay probe OK · {_pinnedProxy.LatencyMilliseconds} ms" : "Cannot relay traffic") · pinned @_pinnedProxy.PinnedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small> }
         </div>
         <button type="button" @onclick="LoadPinnedAsync">Refresh pinned status</button>
     </section>
@@ -278,7 +278,7 @@
     private string _testBody = "";
     private string _testHeadersJson = "{}";
     private string _testQueryParametersJson = "{}";
-    private int _testTimeoutSeconds = 15;
+    private int _testTimeoutSeconds = 30;
     private bool _testUseCache;
     private int _testCacheDurationSeconds = 60;
     private bool _testRunning;

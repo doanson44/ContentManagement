@@ -1,25 +1,24 @@
-using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
+using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using ContentManagement.Server.Services;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ContentManagement.Server.BackgroundJobs;
 
 public sealed class PinnedProxyHealthJob(
     ContentManagementDbContext db,
-    IHttpClientFactory httpClientFactory,
+    ProxyDirectoryClient proxyDirectory,
     ProxyHealthService healthService,
+    IOptions<ProxyHealthOptions> healthOptions,
     PinnedProxyCache pinnedCache,
     ILogger<PinnedProxyHealthJob> logger)
 {
     private const int SingletonId = 1;
     private const int CandidateLimit = 30;
-    private const long MaximumHealthyLatencyMs = 3000;
-    private const string Upstream = "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=json&country=vn";
 
     [DisableConcurrentExecution(timeoutInSeconds: 240)]
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
@@ -35,9 +34,8 @@ public sealed class PinnedProxyHealthJob(
         pinned.IsHealthy = currentHealth.IsHealthy;
         await db.SaveChangesAsync(cancellationToken);
 
-        // A reachable TCP endpoint is not classified as dead solely because it is slow.
-        // The latency threshold is used to rank/qualify replacement candidates, not to override
-        // the manual/automatic rotation setting for a proxy that still accepts connections.
+        // A relay that works but is slower than the candidate threshold stays pinned; the
+        // threshold only ranks and qualifies replacement candidates when a swap is required.
         var isHealthy = currentHealth.IsHealthy;
         var swapIntervalMinutes = settings?.ProxySwapIntervalMinutes ?? 60;
         var swapDue = settings?.ProxySwapEnabled == true &&
@@ -54,11 +52,12 @@ public sealed class PinnedProxyHealthJob(
         }
 
         if (!isHealthy)
-            logger.LogWarning("Pinned proxy {ProxyAddress} is unhealthy or slow; searching for a replacement immediately.", pinned.Address);
+            logger.LogWarning("Pinned proxy {ProxyAddress} did not relay the health probe; searching for a replacement immediately.", pinned.Address);
         else
             logger.LogInformation("Pinned proxy {ProxyAddress} reached its configured swap interval of {SwapIntervalMinutes} minutes; rotating proxy.",
                 pinned.Address, swapIntervalMinutes);
         var candidates = await FetchCandidatesAsync(cancellationToken);
+        var maximumLatencyMs = healthOptions.Value.MaximumRelayLatencyMilliseconds;
         var ranked = new List<(string Address, string Protocol, long Latency)>();
         using var semaphore = new SemaphoreSlim(5);
         var checks = candidates.Where(candidate => !candidate.Address.Equals(pinned.Address, StringComparison.OrdinalIgnoreCase))
@@ -69,7 +68,7 @@ public sealed class PinnedProxyHealthJob(
                 try
                 {
                     var result = await healthService.CheckAsync(candidate.Address, cancellationToken);
-                    if (result.IsHealthy && result.LatencyMilliseconds is <= MaximumHealthyLatencyMs)
+                    if (result.IsHealthy && result.LatencyMilliseconds <= maximumLatencyMs)
                         lock (ranked) ranked.Add((candidate.Address, candidate.Protocol, result.LatencyMilliseconds.Value));
                 }
                 finally { semaphore.Release(); }
@@ -100,81 +99,14 @@ public sealed class PinnedProxyHealthJob(
     {
         try
         {
-            using var response = await httpClientFactory.CreateClient("ProxyScrape").GetAsync(Upstream, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            const int maximumBytes = 2 * 1024 * 1024;
-            if (response.Content.Headers.ContentLength is > maximumBytes)
-                throw new JsonException("Proxy list exceeds the configured size limit.");
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var buffer = new MemoryStream();
-            var chunk = new byte[16 * 1024];
-            while (true)
-            {
-                var read = await stream.ReadAsync(chunk, cancellationToken);
-                if (read == 0) break;
-                if (buffer.Length + read > maximumBytes)
-                    throw new JsonException("Proxy list exceeds the configured size limit.");
-                await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
-            }
-            using var document = JsonDocument.Parse(buffer.ToArray());
-            var result = new Dictionary<string, (string Address, string Protocol)>(StringComparer.OrdinalIgnoreCase);
-            Extract(document.RootElement, result);
-            return result.Values.ToList();
+            var directory = await proxyDirectory.GetAsync(cancellationToken);
+            return directory.Proxies.Select(proxy => (proxy.Address, proxy.Protocol)).ToList();
         }
-        catch (Exception exception) when ((exception is HttpRequestException or JsonException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when ((exception is HttpRequestException or JsonException or ProxyDirectoryException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Unable to fetch proxy candidates for automatic failover.");
             return [];
         }
-    }
-
-    private static void Extract(JsonElement element, IDictionary<string, (string Address, string Protocol)> result)
-    {
-        if (element.ValueKind == JsonValueKind.String)
-        {
-            Add(element.GetString(), result);
-            return;
-        }
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var child in element.EnumerateArray()) Extract(child, result);
-            return;
-        }
-        if (element.ValueKind != JsonValueKind.Object) return;
-
-        var protocol = ReadString(element, "protocol", "scheme", "type");
-        var host = ReadString(element, "ip", "host", "hostname");
-        var port = ReadPort(element, "port");
-        if (!string.IsNullOrWhiteSpace(protocol) && !string.IsNullOrWhiteSpace(host) &&
-            port is > 0 and <= 65535)
-            Add($"{protocol}://{host}:{port}", result);
-        foreach (var property in element.EnumerateObject()) Extract(property.Value, result);
-    }
-
-    private static string? ReadString(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-            if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
-                return value.GetString();
-        return null;
-    }
-
-    private static int? ReadPort(JsonElement element, string name)
-    {
-        if (!element.TryGetProperty(name, out var value)) return null;
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var port)) return port;
-        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed) ? parsed : null;
-    }
-
-    private static void Add(string? candidate, IDictionary<string, (string Address, string Protocol)> result)
-    {
-        if (string.IsNullOrWhiteSpace(candidate) || !Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var uri) ||
-            uri.UserInfo.Length != 0 || uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
-            uri.Port is < 1 or > 65535 || uri.Scheme is not ("http" or "https" or "socks4" or "socks5") ||
-            !IPAddress.TryParse(uri.Host, out _)) return;
-        var protocol = uri.Scheme.ToLowerInvariant();
-        var address = $"{protocol}://{uri.Host}:{uri.Port}";
-        result.TryAdd(address, (address, protocol));
     }
 
     private static PinnedProxySnapshot ToSnapshot(PinnedProxy proxy) =>

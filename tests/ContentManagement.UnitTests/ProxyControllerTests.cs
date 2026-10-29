@@ -102,6 +102,15 @@ public sealed class ProxyControllerTests
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
 
+    [Fact]
+    public void ProxyRequest_DefaultsToRelayFriendlyTimeout()
+    {
+        var request = new ProxyController.ProxyRequest();
+
+        Assert.Equal(30, request.TimeoutSeconds);
+        Assert.Equal("GET", request.Method);
+    }
+
     private static ContentManagementDbContext CreateDbContext() =>
         new(new DbContextOptionsBuilder<ContentManagementDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))

@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
 using ContentManagement.Server.Services;
@@ -14,17 +13,11 @@ namespace ContentManagement.Server.Controllers;
 [Route("api/proxies")]
 [Authorize(Roles = "Administrator")]
 public sealed class ProxiesController(
-    IHttpClientFactory httpClientFactory,
-    IMemoryCache memoryCache,
+    ProxyDirectoryClient proxyDirectory,
     ILogger<ProxiesController> logger,
     ContentManagementDbContext db,
     PinnedProxyCache pinnedProxyCache) : ControllerBase
 {
-    private const string CacheKey = "proxyscrape:vietnam:protocolipport";
-    private const int MaximumResponseBytes = 2 * 1024 * 1024;
-    private static readonly Uri ProxyScrapeUri = new(
-        "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=json&country=vn");
-
     [HttpGet]
     [ProducesResponseType<ProxyListResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
@@ -33,45 +26,7 @@ public sealed class ProxiesController(
     {
         try
         {
-            var result = await memoryCache.GetOrCreateAsync(CacheKey, async entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
-                var client = httpClientFactory.CreateClient("ProxyScrape");
-                using var response = await client.GetAsync(ProxyScrapeUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    logger.LogWarning("ProxyScrape returned upstream status code {StatusCode}.", (int)response.StatusCode);
-                    throw new ProxyUpstreamException("The upstream proxy provider returned an unsuccessful response.");
-                }
-
-                if (response.Content.Headers.ContentLength is > MaximumResponseBytes)
-                    throw new ProxyUpstreamException("The upstream response exceeded the configured size limit.");
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var buffer = new MemoryStream();
-                var chunk = new byte[16 * 1024];
-                while (true)
-                {
-                    var bytesRead = await stream.ReadAsync(chunk, cancellationToken);
-                    if (bytesRead == 0) break;
-                    if (buffer.Length + bytesRead > MaximumResponseBytes)
-                        throw new ProxyUpstreamException("The upstream response exceeded the configured size limit.");
-                    await buffer.WriteAsync(chunk.AsMemory(0, bytesRead), cancellationToken);
-                }
-
-                using var document = JsonDocument.Parse(buffer.ToArray());
-                var proxies = new Dictionary<string, ProxyEntry>(StringComparer.OrdinalIgnoreCase);
-                ExtractProxies(document.RootElement, proxies);
-                var ordered = proxies.Values
-                    .OrderBy(proxy => proxy.Protocol, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(proxy => proxy.Address, StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-                return new ProxyListResponse(ordered, DateTimeOffset.UtcNow);
-            });
-
-            return Ok(result);
+            return Ok(await proxyDirectory.GetAsync(cancellationToken));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -98,7 +53,7 @@ public sealed class ProxiesController(
                 title: "Invalid proxy provider response",
                 detail: "The proxy provider returned data that could not be parsed.");
         }
-        catch (ProxyUpstreamException exception)
+        catch (ProxyDirectoryException exception)
         {
             logger.LogWarning(exception, "ProxyScrape returned an unusable response.");
             return Problem(statusCode: StatusCodes.Status502BadGateway,
@@ -120,14 +75,10 @@ public sealed class ProxiesController(
     [HttpPost("pin")]
     public async Task<ActionResult<PinnedProxySnapshot>> PinAsync([FromBody] PinProxyRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Address) || !Uri.TryCreate(request.Address.Trim(), UriKind.Absolute, out var uri) ||
-            uri.Scheme is not ("http" or "https" or "socks4" or "socks5") || uri.UserInfo.Length != 0 ||
-            uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.Port is < 1 or > 65535 ||
-            !IPAddress.TryParse(uri.Host, out var ip) || !IsPublicAddress(ip))
+        if (!ProxyAddressRules.TryNormalize(request.Address, out var address, out var protocol) ||
+            !IPAddress.TryParse(new Uri(address).Host, out var ip) || !ProxyAddressRules.IsPublicAddress(ip))
             return BadRequest(new ProblemDetails { Title = "Invalid proxy address", Detail = "Choose a proxy with a public IP address from the list." });
 
-        var protocol = uri.Scheme.ToLowerInvariant();
-        var address = $"{protocol}://{uri.Host}:{uri.Port}";
         var pinned = await db.PinnedProxies.SingleOrDefaultAsync(proxy => proxy.Id == 1, cancellationToken);
         var now = DateTime.UtcNow;
         if (pinned is null)
@@ -146,187 +97,5 @@ public sealed class ProxiesController(
         return Ok(snapshot);
     }
 
-    private static bool IsPublicAddress(IPAddress ip)
-    {
-        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
-        if (IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal) return false;
-        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            var bytes = ip.GetAddressBytes();
-            return bytes[0] != 0 && bytes[0] != 10 && bytes[0] != 127 &&
-                !(bytes[0] == 169 && bytes[1] == 254) && !(bytes[0] == 172 && bytes[1] is >= 16 and <= 31) &&
-                !(bytes[0] == 192 && bytes[1] == 168) && !(bytes[0] == 100 && bytes[1] is >= 64 and <= 127) && bytes[0] < 224;
-        }
-        var bytes6 = ip.GetAddressBytes();
-        return !ip.Equals(IPAddress.IPv6Any) && !(bytes6[0] == 0xFC || bytes6[0] == 0xFD);
-    }
-
     public sealed record PinProxyRequest(string Address);
-    private static void ExtractProxies(JsonElement element, IDictionary<string, ProxyEntry> proxies)
-    {
-        if (element.ValueKind == JsonValueKind.String)
-        {
-            AddProxy(element.GetString(), proxies);
-            return;
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-                ExtractProxies(item, proxies);
-            return;
-        }
-
-        if (element.ValueKind != JsonValueKind.Object)
-            return;
-
-        var protocol = ReadString(element, "protocol", "scheme", "type");
-        var host = ReadString(element, "ip", "host", "hostname");
-        var port = ReadPort(element, "port");
-
-        if (!string.IsNullOrWhiteSpace(protocol) &&
-            !string.IsNullOrWhiteSpace(host) &&
-            port is > 0 and <= 65535)
-        {
-            var candidate = $"{protocol}://{host}:{port}";
-            if (TryCreateProxyAddress(candidate, out var address, out var normalizedProtocol))
-            {
-                proxies.TryAdd(address, new ProxyEntry(
-                    address,
-                    normalizedProtocol,
-                    ReadString(element, "country", "country_name"),
-                    ReadString(element, "country_code", "countryCode", "cc"),
-                    ReadString(element, "city"),
-                    ReadString(element, "anonymity", "anonymous"),
-                    ReadBoolean(element, "ssl", "https", "supports_ssl"),
-                    ReadNumber(element, "latency_ms", "latency", "timeout_ms", "timeout"),
-                    ReadNumber(element, "uptime_percent", "uptime"),
-                    ReadString(element, "asn", "as_number"),
-                    ReadString(element, "isp", "organization", "org"),
-                    ReadTimestamp(element, "last_checked", "lastChecked", "last_seen")));
-            }
-        }
-
-        foreach (var property in element.EnumerateObject())
-            ExtractProxies(property.Value, proxies);
-    }
-
-    private static string? ReadString(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
-                return value.GetString();
-        }
-
-        return null;
-    }
-
-    private static int? ReadPort(JsonElement element, string name)
-    {
-        if (!element.TryGetProperty(name, out var value))
-            return null;
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numericPort))
-            return numericPort;
-
-        return value.ValueKind == JsonValueKind.String &&
-            int.TryParse(value.GetString(), out var stringPort) ? stringPort : null;
-    }
-
-    private static void AddProxy(string? candidate, IDictionary<string, ProxyEntry> proxies)
-    {
-        if (!TryCreateProxyAddress(candidate, out var address, out var protocol))
-            return;
-
-        proxies.TryAdd(address, new ProxyEntry(address, protocol));
-    }
-
-    private static bool TryCreateProxyAddress(string? candidate, out string address, out string protocol)
-    {
-        address = "";
-        protocol = "";
-        if (string.IsNullOrWhiteSpace(candidate) ||
-            !Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var uri) ||
-            uri.UserInfo.Length != 0 ||
-            uri.AbsolutePath != "/" ||
-            uri.Query.Length != 0 ||
-            uri.Fragment.Length != 0 ||
-            uri.Port is < 1 or > 65535 ||
-            uri.Scheme is not ("http" or "https" or "socks4" or "socks5") ||
-            !IPAddress.TryParse(uri.Host, out _))
-            return false;
-
-        protocol = uri.Scheme.ToLowerInvariant();
-        address = $"{protocol}://{uri.Host}:{uri.Port}";
-        return true;
-    }
-
-    private static bool? ReadBoolean(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!element.TryGetProperty(name, out var value)) continue;
-            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                return value.GetBoolean();
-            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
-                return parsed;
-        }
-        return null;
-    }
-
-    private static double? ReadNumber(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!element.TryGetProperty(name, out var value)) continue;
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var numeric))
-                return numeric;
-            if (value.ValueKind == JsonValueKind.String &&
-                double.TryParse(value.GetString(), System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out numeric))
-                return numeric;
-        }
-        return null;
-    }
-
-    private static DateTimeOffset? ReadTimestamp(JsonElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!element.TryGetProperty(name, out var value)) continue;
-            if (value.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
-                return parsed.ToUniversalTime();
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var epoch))
-            {
-                try
-                {
-                    return epoch > 100_000_000_000
-                        ? DateTimeOffset.FromUnixTimeMilliseconds((long)epoch)
-                        : DateTimeOffset.FromUnixTimeSeconds((long)epoch);
-                }
-                catch (ArgumentOutOfRangeException) { return null; }
-            }
-        }
-        return null;
-    }
-
-    public sealed record ProxyEntry(
-        string Address,
-        string Protocol,
-        string? Country = null,
-        string? CountryCode = null,
-        string? City = null,
-        string? Anonymity = null,
-        bool? SupportsSsl = null,
-        double? LatencyMilliseconds = null,
-        double? UptimePercent = null,
-        string? Asn = null,
-        string? Isp = null,
-        DateTimeOffset? LastChecked = null);
-    public sealed record ProxyListResponse(IReadOnlyList<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
-
-    private sealed class ProxyUpstreamException(string message) : Exception(message) { }
 }

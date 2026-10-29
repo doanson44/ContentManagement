@@ -58,9 +58,10 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpClient(nameof(ExternalFileApiClient), client => client.Timeout = Timeout.InfiniteTimeSpan);
-builder.Services.AddHttpClient("ProxyScrape", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient(ProxyDirectoryClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<PinnedProxyCache>();
+builder.Services.AddSingleton<ProxyDirectoryClient>();
 builder.Services.AddSingleton<ProxyHealthService>();
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
@@ -90,6 +91,17 @@ builder.Services.AddOptions<ContentManagementOptions>()
     .Validate(options => string.IsNullOrWhiteSpace(options.PublicBaseUrl) ||
         (Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var publicBaseUrl) && publicBaseUrl.Scheme == Uri.UriSchemeHttps),
         "ContentManagement:PublicBaseUrl must be an absolute HTTPS URL when configured.")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<ProxyHealthOptions>()
+    .Bind(builder.Configuration.GetSection(ProxyHealthOptions.SectionName))
+    .Validate(options => Uri.TryCreate(options.ProbeUrl, UriKind.Absolute, out var probe) &&
+        (probe.Scheme == Uri.UriSchemeHttps || probe.Scheme == Uri.UriSchemeHttp),
+        "ProxyHealth:ProbeUrl must be an absolute HTTP or HTTPS URL.")
+    .Validate(options => options.ProbeTimeoutSeconds is >= 3 and <= 30,
+        "ProxyHealth:ProbeTimeoutSeconds must be between 3 and 30.")
+    .Validate(options => options.MaximumRelayLatencyMilliseconds is >= 1000 and <= 60000,
+        "ProxyHealth:MaximumRelayLatencyMilliseconds must be between 1000 and 60000.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<AdminAuthOptions>()
