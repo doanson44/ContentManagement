@@ -48,11 +48,11 @@
         <div class="proxy-filters">
             <label>
                 <span>Search address</span>
-                <input type="search" @bind="_search" @bind:event="oninput" placeholder="Search IP or port" />
+                <input type="search" @bind="_search" @bind:event="oninput" placeholder="Search IP or port" @bind:after="ResetPage" />
             </label>
             <label>
                 <span>Protocol</span>
-                <select @bind="_protocol">
+                <select @bind="_protocol" @bind:after="ResetPage">
                     <option value="">All protocols</option>
                     <option value="http">HTTP</option>
                     <option value="https">HTTPS</option>
