@@ -53,10 +53,10 @@
             <button type="button" class="proxy-copy-all-button" @onclick="CopyFilteredAsync" disabled="@(FilteredProxies.Count() == 0)">Copy filtered list</button>
         </div>
 
-        <div class="proxy-filters">
-            <label>
-                <span>Search address</span>
-                <input type="search" @bind="_search" @bind:event="oninput" placeholder="Search IP or port" @bind:after="ResetPage" />
+        <div class="proxy-filters proxy-filters-expanded">
+            <label class="proxy-filter-search">
+                <span>Search all fields</span>
+                <input type="search" @bind="_search" @bind:event="oninput" placeholder="IP, country, ISP, ASN…" @bind:after="ResetPage" />
             </label>
             <label>
                 <span>Protocol</span>
@@ -66,6 +66,34 @@
                     <option value="https">HTTPS</option>
                     <option value="socks4">SOCKS4</option>
                     <option value="socks5">SOCKS5</option>
+                </select>
+            </label>
+            <label>
+                <span>Country</span>
+                <select @bind="_country" @bind:after="ResetPage">
+                    <option value="">All countries</option>
+                    @foreach (var country in AvailableCountries)
+                    {
+                        <option value="@country">@country</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Anonymity</span>
+                <select @bind="_anonymity" @bind:after="ResetPage">
+                    <option value="">All levels</option>
+                    @foreach (var level in AvailableAnonymityLevels)
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>SSL support</span>
+                <select @bind="_ssl" @bind:after="ResetPage">
+                    <option value="">Any</option>
+                    <option value="true">Supported</option>
+                    <option value="false">Not supported</option>
                 </select>
             </label>
             <label>
@@ -94,14 +122,36 @@
         else
         {
             <div class="proxy-table-wrap">
-                <table class="proxy-table">
-                    <thead><tr><th>Protocol</th><th>Proxy address</th><th>Actions</th></tr></thead>
+                <table class="proxy-table proxy-metadata-table">
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Protocol))">Protocol @SortIndicator(nameof(ProxyEntry.Protocol))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Address))">Proxy address @SortIndicator(nameof(ProxyEntry.Address))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Country))">Country @SortIndicator(nameof(ProxyEntry.Country))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.City))">City @SortIndicator(nameof(ProxyEntry.City))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.Anonymity))">Anonymity @SortIndicator(nameof(ProxyEntry.Anonymity))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.SupportsSsl))">SSL @SortIndicator(nameof(ProxyEntry.SupportsSsl))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.LatencyMilliseconds))">Latency @SortIndicator(nameof(ProxyEntry.LatencyMilliseconds))</button></th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.UptimePercent))">Uptime @SortIndicator(nameof(ProxyEntry.UptimePercent))</button></th>
+                            <th>ISP / ASN</th>
+                            <th><button type="button" class="proxy-sort-button" @onclick="() => SortBy(nameof(ProxyEntry.LastChecked))">Last checked @SortIndicator(nameof(ProxyEntry.LastChecked))</button></th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         @foreach (var proxy in PagedProxies)
                         {
                             <tr @key="proxy.Address">
                                 <td><span class="proxy-protocol-badge">@proxy.Protocol.ToUpperInvariant()</span></td>
                                 <td><code>@proxy.Address</code></td>
+                                <td>@Display(proxy.Country, proxy.CountryCode)</td>
+                                <td>@Display(proxy.City)</td>
+                                <td>@Display(proxy.Anonymity)</td>
+                                <td>@(proxy.SupportsSsl is null ? "—" : proxy.SupportsSsl.Value ? "Yes" : "No")</td>
+                                <td>@(proxy.LatencyMilliseconds is null ? "—" : $"{proxy.LatencyMilliseconds.Value:0.##} ms")</td>
+                                <td>@(proxy.UptimePercent is null ? "—" : $"{proxy.UptimePercent.Value:0.##}%")</td>
+                                <td>@Display(proxy.Isp, proxy.Asn)</td>
+                                <td>@(proxy.LastChecked is null ? "—" : proxy.LastChecked.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
                                 <td class="proxy-row-actions"><button class="proxy-copy-button" type="button" @onclick="() => CopyOneAsync(proxy.Address)">Copy</button><button class="proxy-pin-button" type="button" @onclick="() => PinProxyAsync(proxy)" disabled="@(_pinning || string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase))">@(string.Equals(_pinnedProxy?.Address, proxy.Address, StringComparison.OrdinalIgnoreCase) ? "Pinned" : "Pin proxy")</button></td>
                             </tr>
                         }
@@ -131,17 +181,86 @@
     private string _feedback = "";
     private string _search = "";
     private string _protocol = "";
+    private string _country = "";
+    private string _anonymity = "";
+    private string _ssl = "";
+    private string _sortColumn = nameof(ProxyEntry.Protocol);
+    private bool _sortDescending;
     private int _page = 1;
     private int _pageSize = 20;
     private DateTimeOffset? _fetchedAt;
     private PinnedProxyResponse? _pinnedProxy;
     private bool _pinning;
 
-    private IEnumerable<ProxyEntry> FilteredProxies => _proxies
-        .Where(proxy => string.IsNullOrWhiteSpace(_protocol) || proxy.Protocol.Equals(_protocol, StringComparison.OrdinalIgnoreCase))
-        .Where(proxy => string.IsNullOrWhiteSpace(_search) || proxy.Address.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase))
-        .OrderBy(proxy => proxy.Protocol, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(proxy => proxy.Address, StringComparer.OrdinalIgnoreCase);
+    private IEnumerable<string> AvailableCountries => _proxies
+        .Select(proxy => Display(proxy.Country, proxy.CountryCode))
+        .Where(value => value != "—")
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<string> AvailableAnonymityLevels => _proxies
+        .Where(proxy => !string.IsNullOrWhiteSpace(proxy.Anonymity))
+        .Select(proxy => proxy.Anonymity!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<ProxyEntry> FilteredProxies
+    {
+        get
+        {
+            IEnumerable<ProxyEntry> query = _proxies
+                .Where(proxy => string.IsNullOrWhiteSpace(_protocol) || proxy.Protocol.Equals(_protocol, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_country) || Display(proxy.Country, proxy.CountryCode).Equals(_country, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_anonymity) || string.Equals(proxy.Anonymity, _anonymity, StringComparison.OrdinalIgnoreCase))
+                .Where(proxy => string.IsNullOrWhiteSpace(_ssl) || (proxy.SupportsSsl?.ToString().ToLowerInvariant() == _ssl))
+                .Where(proxy => string.IsNullOrWhiteSpace(_search) || SearchableText(proxy).Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            IOrderedEnumerable<ProxyEntry> ordered = _sortColumn switch
+            {
+                nameof(ProxyEntry.Address) => Order(query, proxy => proxy.Address),
+                nameof(ProxyEntry.Country) => Order(query, proxy => Display(proxy.Country, proxy.CountryCode)),
+                nameof(ProxyEntry.City) => Order(query, proxy => proxy.City),
+                nameof(ProxyEntry.Anonymity) => Order(query, proxy => proxy.Anonymity),
+                nameof(ProxyEntry.SupportsSsl) => Order(query, proxy => proxy.SupportsSsl),
+                nameof(ProxyEntry.LatencyMilliseconds) => Order(query, proxy => proxy.LatencyMilliseconds),
+                nameof(ProxyEntry.UptimePercent) => Order(query, proxy => proxy.UptimePercent),
+                nameof(ProxyEntry.LastChecked) => Order(query, proxy => proxy.LastChecked),
+                _ => Order(query, proxy => proxy.Protocol)
+            };
+            return _sortDescending ? ordered.Reverse() : ordered;
+        }
+    }
+
+    private IOrderedEnumerable<ProxyEntry> Order<TKey>(IEnumerable<ProxyEntry> query, Func<ProxyEntry, TKey> selector) =>
+        _sortDescending
+            ? query.OrderByDescending(selector, Comparer<TKey>.Default)
+            : query.OrderBy(selector, Comparer<TKey>.Default);
+
+    private static string Display(params string?[] values) =>
+        string.Join(" · ", values.Where(value => !string.IsNullOrWhiteSpace(value))).Trim() is { Length: > 0 } text ? text : "—";
+
+    private static string SearchableText(ProxyEntry proxy) => string.Join(" ", new[]
+    {
+        proxy.Address, proxy.Protocol, proxy.Country, proxy.CountryCode, proxy.City, proxy.Anonymity,
+        proxy.SupportsSsl?.ToString(), proxy.LatencyMilliseconds?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        proxy.UptimePercent?.ToString(System.Globalization.CultureInfo.InvariantCulture), proxy.Asn, proxy.Isp,
+        proxy.LastChecked?.ToString("O")
+    }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+            _sortDescending = !_sortDescending;
+        else
+        {
+            _sortColumn = column;
+            _sortDescending = false;
+        }
+        ResetPage();
+    }
+
+    private string SortIndicator(string column) =>
+        _sortColumn != column ? "↕" : _sortDescending ? "↓" : "↑";
 
     private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredProxies.Count() / (double)_pageSize));
     private IEnumerable<ProxyEntry> PagedProxies => FilteredProxies.Skip((_page - 1) * _pageSize).Take(_pageSize);
@@ -270,7 +389,19 @@
     private void ResetPage() => _page = 1;
 
     private sealed record SessionResponse(string Email, string? Role, string[]? Permissions = null);
-    private sealed record ProxyEntry(string Address, string Protocol);
+    private sealed record ProxyEntry(
+        string Address,
+        string Protocol,
+        string? Country = null,
+        string? CountryCode = null,
+        string? City = null,
+        string? Anonymity = null,
+        bool? SupportsSsl = null,
+        double? LatencyMilliseconds = null,
+        double? UptimePercent = null,
+        string? Asn = null,
+        string? Isp = null,
+        DateTimeOffset? LastChecked = null);
     private sealed record ProxyListResponse(List<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
     private sealed record PinnedProxyResponse(string Address, string Protocol, DateTime PinnedUtc, DateTime? LastCheckedUtc, long? LatencyMilliseconds, bool? IsHealthy);
 }
