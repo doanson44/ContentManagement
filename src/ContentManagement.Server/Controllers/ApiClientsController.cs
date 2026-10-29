@@ -19,7 +19,8 @@ public sealed class ApiClientsController(ContentManagementDbContext db) : Contro
     private static readonly string[] SupportedScopes =
     [
         "files.read", "files.write", "files.delete",
-        "json.read", "json.write", "json.delete"
+        "json.read", "json.write", "json.delete",
+        "proxy.request"
     ];
 
     [HttpGet]
