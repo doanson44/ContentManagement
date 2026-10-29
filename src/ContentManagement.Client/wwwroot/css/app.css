@@ -159,13 +159,14 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .proxy-list-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 1.35rem;border-bottom:1px solid #eaecf0}
 .proxy-list-heading h2{margin:0;font-size:1.05rem;letter-spacing:-.02em}
 .proxy-list-heading p{margin:.35rem 0 0;color:#667085;font-size:.8rem}
-.proxy-filters{display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,.45fr) minmax(120px,.3fr);gap:1rem;padding:1rem 1.35rem;border-bottom:1px solid #eaecf0;background:#fcfcfd}
+.proxy-filters{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(4,minmax(130px,.8fr)) minmax(100px,.55fr);gap:1rem;padding:1rem 1.35rem;border-bottom:1px solid #eaecf0;background:#fcfcfd}.proxy-filter-search{min-width:0}
 .proxy-filters label{display:flex;flex-direction:column;gap:.4rem;color:#475467;font-size:.78rem;font-weight:650}
 .proxy-filters input,.proxy-filters select{width:100%;min-height:40px;padding:0 .75rem;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:#101828;font:inherit;font-size:.85rem}
 .proxy-filters input:focus,.proxy-filters select:focus{outline:2px solid #84adff;outline-offset:1px}
 .proxy-table-wrap{overflow-x:auto}
 .proxy-table{width:100%;border-collapse:collapse;text-align:left}
 .proxy-table th{padding:.8rem 1.25rem;background:#f9fafb;color:#667085;font-size:.7rem;font-weight:750;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.proxy-sort-button{display:inline-flex;align-items:center;gap:.35rem;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}.proxy-sort-button:hover{color:#175cd3}.proxy-metadata-table{min-width:1250px}.proxy-metadata-table td{white-space:nowrap}.proxy-metadata-table td:nth-child(2),.proxy-metadata-table td:nth-child(9){white-space:normal;min-width:140px}
 .proxy-table td{padding:.8rem 1.25rem;border-top:1px solid #f2f4f7;font-size:.85rem}
 .proxy-table tbody tr:hover{background:#fcfcfd}
 .proxy-table code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.84rem;overflow-wrap:anywhere}
@@ -249,6 +250,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     background: #1f2937;
     color: #9ca3af;
   }
+  .proxy-page .proxy-sort-button:hover { color: #93c5fd; }
   .proxy-page .proxy-table td { border-color: #374151; }
   .proxy-page .proxy-table tbody tr:hover { background: #1f2937; }
   .proxy-page .proxy-table code { color: #e5e7eb; }
