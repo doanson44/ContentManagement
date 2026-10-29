@@ -16,7 +16,7 @@ public sealed class ProxyHealthService(ILogger<ProxyHealthService> logger)
     {
         if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https" or "socks4" or "socks5") ||
-            !IPAddress.TryParse(uri.Host, out _) ||
+            !IPAddress.TryParse(uri.Host, out var ip) || !IsPublicAddress(ip) ||
             uri.Port is < 1 or > 65535)
             return new ProxyHealthResult(false, null);
 
