@@ -16,6 +16,23 @@ public sealed class FileSystemStorageTests : IDisposable
         _storage = new FileSystemStorage(Options.Create(new ContentManagementOptions { StorageRoot = _root }));
 
     [Fact]
+    public void Constructor_creates_storage_root()
+    {
+        Assert.True(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public void Inventory_recreates_missing_storage_root()
+    {
+        Directory.Delete(_root, recursive: true);
+
+        var candidates = _storage.ListOrphanCandidates(DateTime.UtcNow);
+
+        Assert.Empty(candidates);
+        Assert.True(Directory.Exists(_root));
+    }
+
+    [Fact]
     public async Task Saves_stream_with_hash_and_reads_it_back()
     {
         var bytes = Encoding.UTF8.GetBytes("sample binary");
