@@ -23,6 +23,21 @@ public sealed class ProxyHealthService(IOptions<ProxyHealthOptions> options, ILo
         if (!IPAddress.TryParse(proxyUri.Host, out var proxyIp) || !ProxyAddressRules.IsPublicAddress(proxyIp))
             return new ProxyHealthResult(false, null);
 
+        // A single failed attempt is frequently a transient network hiccup, so retry a bounded
+        // number of times. Persistent failure is tracked by the pool's consecutive-failure counter.
+        var attempts = Math.Clamp(options.Value.ProbeSamples, 1, 3);
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            var latency = await ProbeOnceAsync(proxyUri, address, cancellationToken);
+            if (latency is not null) return new ProxyHealthResult(true, latency);
+            if (cancellationToken.IsCancellationRequested) break;
+        }
+
+        return new ProxyHealthResult(false, null);
+    }
+
+    private async Task<long?> ProbeOnceAsync(Uri proxyUri, string address, CancellationToken cancellationToken)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(options.Value.ProbeTimeoutSeconds));
         var stopwatch = Stopwatch.StartNew();
@@ -34,14 +49,14 @@ public sealed class ProxyHealthService(IOptions<ProxyHealthOptions> options, ILo
             request.Headers.ConnectionClose = true;
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             stopwatch.Stop();
-            return new ProxyHealthResult(true, stopwatch.ElapsedMilliseconds);
+            return stopwatch.ElapsedMilliseconds;
         }
         catch (Exception exception) when (exception is SocketException or HttpRequestException or IOException or OperationCanceledException)
         {
             if (cancellationToken.IsCancellationRequested) throw;
             logger.LogDebug("Proxy relay probe failed for {ProxyAddress}: {FailureType}.",
                 address, exception.GetType().Name);
-            return new ProxyHealthResult(false, null);
+            return null;
         }
     }
 }

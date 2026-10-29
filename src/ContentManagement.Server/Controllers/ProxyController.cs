@@ -21,6 +21,8 @@ public sealed class ProxyController(
     ContentManagementDbContext db,
     IMemoryCache memoryCache,
     PinnedProxyCache pinnedProxyCache,
+    ProxyPool proxyPool,
+    ProxyRepinTrigger repinTrigger,
     ILogger<ProxyController> logger) : ControllerBase
 {
     private const int MaximumRequestBodyBytes = 1 * 1024 * 1024;
@@ -144,6 +146,10 @@ public sealed class ProxyController(
                 message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+
+            // Every relay is a free health sample: a completed exchange proves the proxy works.
+            proxyPool.RecordRelay(pinned.Address, pinned.Protocol, succeeded: true, stopwatch.ElapsedMilliseconds);
+
             var bodyBytes = await ReadBoundedAsync(await response.Content.ReadAsStreamAsync(timeout.Token),
                 MaximumResponseBodyBytes, timeout.Token);
             stopwatch.Stop();
@@ -181,6 +187,7 @@ public sealed class ProxyController(
         catch (OperationCanceledException exception)
         {
             logger.LogInformation(exception, "Pinned-proxy request timed out for host {TargetHost}.", targetUri!.Host);
+            RecordRelayFailure(pinned.Address, pinned.Protocol);
             return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
             {
                 Title = "Proxy request timed out",
@@ -190,6 +197,7 @@ public sealed class ProxyController(
         catch (HttpRequestException exception)
         {
             logger.LogWarning(exception, "Pinned-proxy request failed for host {TargetHost}.", targetUri!.Host);
+            RecordRelayFailure(pinned.Address, pinned.Protocol);
             return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
             {
                 Title = "Proxy request failed",
@@ -208,12 +216,19 @@ public sealed class ProxyController(
         catch (IOException exception)
         {
             logger.LogWarning(exception, "Pinned-proxy connection was lost for host {TargetHost}.", targetUri!.Host);
+            RecordRelayFailure(pinned.Address, pinned.Protocol);
             return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
             {
                 Title = "Proxy connection lost",
                 Detail = "The pinned proxy closed the connection before the response completed."
             });
         }
+    }
+
+    private void RecordRelayFailure(string address, string protocol)
+    {
+        proxyPool.RecordRelay(address, protocol, succeeded: false, elapsedMilliseconds: null);
+        if (proxyPool.IsSuspect(address)) repinTrigger.TryRequest();
     }
 
     private static bool TryValidateRequest(ProxyRequest request, out Uri? targetUri, out string error)

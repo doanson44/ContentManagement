@@ -14,6 +14,7 @@ namespace ContentManagement.Server.Controllers;
 [Authorize(Roles = "Administrator")]
 public sealed class ProxiesController(
     ProxyDirectoryClient proxyDirectory,
+    ProxyPool proxyPool,
     ILogger<ProxiesController> logger,
     ContentManagementDbContext db,
     PinnedProxyCache pinnedProxyCache) : ControllerBase
@@ -72,6 +73,10 @@ public sealed class ProxiesController(
         return Ok(snapshot);
     }
 
+    [HttpGet("pool")]
+    public ActionResult<ProxyPoolResponse> GetPool() =>
+        Ok(new ProxyPoolResponse(pinnedProxyCache.Get()?.Address, proxyPool.Snapshot()));
+
     [HttpPost("pin")]
     public async Task<ActionResult<PinnedProxySnapshot>> PinAsync([FromBody] PinProxyRequest request, CancellationToken cancellationToken)
     {
@@ -98,4 +103,6 @@ public sealed class ProxiesController(
     }
 
     public sealed record PinProxyRequest(string Address);
+
+    public sealed record ProxyPoolResponse(string? PinnedAddress, IReadOnlyList<ProxyPoolEntry> Entries);
 }

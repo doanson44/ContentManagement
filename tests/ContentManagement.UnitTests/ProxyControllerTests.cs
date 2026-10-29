@@ -1,3 +1,4 @@
+using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Controllers;
 using ContentManagement.Server.Data;
 using ContentManagement.Server.Domain;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -18,7 +20,7 @@ public sealed class ProxyControllerTests
     {
         await using var db = CreateDbContext();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
+        var controller = CreateController(db, cache);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -48,7 +50,7 @@ public sealed class ProxyControllerTests
         });
         await db.SaveChangesAsync();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
+        var controller = CreateController(db, cache);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -68,7 +70,7 @@ public sealed class ProxyControllerTests
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var pinnedCache = new PinnedProxyCache(cache);
         pinnedCache.Set(new PinnedProxySnapshot("http://8.8.8.8:8080", "http", DateTime.UtcNow, null, null, null));
-        var controller = new ProxyController(db, cache, pinnedCache, NullLogger<ProxyController>.Instance);
+        var controller = CreateController(db, cache, pinnedCache);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -89,7 +91,7 @@ public sealed class ProxyControllerTests
     {
         await using var db = CreateDbContext();
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var controller = new ProxyController(db, cache, new PinnedProxyCache(cache), NullLogger<ProxyController>.Instance);
+        var controller = CreateController(db, cache);
 
         var result = await controller.PostAsync(new ProxyController.ProxyRequest
         {
@@ -115,4 +117,20 @@ public sealed class ProxyControllerTests
         new(new DbContextOptionsBuilder<ContentManagementDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options);
+
+    private static ProxyController CreateController(
+        ContentManagementDbContext db, IMemoryCache cache, PinnedProxyCache? pinnedCache = null)
+    {
+        var pool = new ProxyPool(Microsoft.Extensions.Options.Options.Create(new ProxyHealthOptions()));
+        var trigger = new ProxyRepinTrigger(
+            new UnusedScopeFactory(), pool, NullLogger<ProxyRepinTrigger>.Instance);
+        return new ProxyController(db, cache, pinnedCache ?? new PinnedProxyCache(cache), pool, trigger,
+            NullLogger<ProxyController>.Instance);
+    }
+
+    private sealed class UnusedScopeFactory : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope() =>
+            throw new InvalidOperationException("A background re-pin must not start from a unit test.");
+    }
 }

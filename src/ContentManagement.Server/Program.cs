@@ -63,6 +63,11 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<PinnedProxyCache>();
 builder.Services.AddSingleton<ProxyDirectoryClient>();
 builder.Services.AddSingleton<ProxyHealthService>();
+builder.Services.AddSingleton<ProxyPool>();
+builder.Services.AddSingleton<ProxyRepinTrigger>();
+// Registered outside the Hangfire block: the off-schedule trigger resolves this job directly
+// when relay traffic proves the pinned proxy is failing.
+builder.Services.AddScoped<PinnedProxyHealthJob>();
 builder.Services.AddHttpClient(nameof(ExternalFileApiHealthCheck), client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<ExternalFileApiClient>();
 // Persist the Data Protection key ring in SQL Server because hosted environments may not grant
@@ -102,6 +107,20 @@ builder.Services.AddOptions<ProxyHealthOptions>()
         "ProxyHealth:ProbeTimeoutSeconds must be between 3 and 30.")
     .Validate(options => options.MaximumRelayLatencyMilliseconds is >= 1000 and <= 60000,
         "ProxyHealth:MaximumRelayLatencyMilliseconds must be between 1000 and 60000.")
+    .Validate(options => options.ProbeSamples is >= 1 and <= 3,
+        "ProxyHealth:ProbeSamples must be between 1 and 3.")
+    .Validate(options => options.PoolSize is >= 3 and <= 50,
+        "ProxyHealth:PoolSize must be between 3 and 50.")
+    .Validate(options => options.MaxProbesPerRun is >= 1 and <= 50,
+        "ProxyHealth:MaxProbesPerRun must be between 1 and 50.")
+    .Validate(options => options.MaxProbesPerRun <= options.PoolSize * 3,
+        "ProxyHealth:MaxProbesPerRun must not exceed three times ProxyHealth:PoolSize.")
+    .Validate(options => options.RevalidateMinutes is >= 1 and <= 60,
+        "ProxyHealth:RevalidateMinutes must be between 1 and 60.")
+    .Validate(options => options.PassiveFailureThreshold is >= 1 and <= 5,
+        "ProxyHealth:PassiveFailureThreshold must be between 1 and 5.")
+    .Validate(options => options.ImprovementThreshold is >= 1.0 and <= 5.0,
+        "ProxyHealth:ImprovementThreshold must be between 1.0 and 5.0.")
     .ValidateOnStart();
 
 builder.Services.AddOptions<AdminAuthOptions>()
@@ -140,7 +159,6 @@ if (hangfireEnabled)
     builder.Services.AddScoped<StaleFileCleanupJob>();
     builder.Services.AddScoped<OrphanFileCleanupJob>();
     builder.Services.AddScoped<PublicHtmlStorageCleanupJob>();
-    builder.Services.AddScoped<PinnedProxyHealthJob>();
     builder.Services.AddHangfire(configuration => configuration
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
@@ -356,7 +374,7 @@ if (app.Configuration.GetValue<bool>("Hangfire:Enabled"))
     recurringJobManager.AddOrUpdate<PublicHtmlStorageCleanupJob>(
         "public-html-storage-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly());
     recurringJobManager.AddOrUpdate<PinnedProxyHealthJob>(
-        "pinned-proxy-health-check", job => job.ExecuteAsync(CancellationToken.None), "*/15 * * * *");
+        "pinned-proxy-health-check", job => job.ExecuteAsync(CancellationToken.None), "*/2 * * * *");
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [new AdminDashboardAuthorizationFilter()]
