@@ -188,7 +188,23 @@ public sealed class ProxiesController(
             !string.IsNullOrWhiteSpace(host) &&
             port is > 0 and <= 65535)
         {
-            AddProxy($"{protocol}://{host}:{port}", proxies);
+            var candidate = $"{protocol}://{host}:{port}";
+            if (TryCreateProxyAddress(candidate, out var address, out var normalizedProtocol))
+            {
+                proxies.TryAdd(address, new ProxyEntry(
+                    address,
+                    normalizedProtocol,
+                    ReadString(element, "country", "country_name"),
+                    ReadString(element, "country_code", "countryCode", "cc"),
+                    ReadString(element, "city"),
+                    ReadString(element, "anonymity", "anonymous"),
+                    ReadBoolean(element, "ssl", "https", "supports_ssl"),
+                    ReadNumber(element, "latency_ms", "latency", "timeout_ms", "timeout"),
+                    ReadNumber(element, "uptime_percent", "uptime"),
+                    ReadString(element, "asn", "as_number"),
+                    ReadString(element, "isp", "organization", "org"),
+                    ReadTimestamp(element, "last_checked", "lastChecked", "last_seen")));
+            }
         }
 
         foreach (var property in element.EnumerateObject())
@@ -220,6 +236,16 @@ public sealed class ProxiesController(
 
     private static void AddProxy(string? candidate, IDictionary<string, ProxyEntry> proxies)
     {
+        if (!TryCreateProxyAddress(candidate, out var address, out var protocol))
+            return;
+
+        proxies.TryAdd(address, new ProxyEntry(address, protocol));
+    }
+
+    private static bool TryCreateProxyAddress(string? candidate, out string address, out string protocol)
+    {
+        address = "";
+        protocol = "";
         if (string.IsNullOrWhiteSpace(candidate) ||
             !Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var uri) ||
             uri.UserInfo.Length != 0 ||
@@ -229,16 +255,77 @@ public sealed class ProxiesController(
             uri.Port is < 1 or > 65535 ||
             uri.Scheme is not ("http" or "https" or "socks4" or "socks5") ||
             !IPAddress.TryParse(uri.Host, out _))
-        {
-            return;
-        }
+            return false;
 
-        var protocol = uri.Scheme.ToLowerInvariant();
-        var address = $"{protocol}://{uri.Host}:{uri.Port}";
-        proxies.TryAdd(address, new ProxyEntry(address, protocol));
+        protocol = uri.Scheme.ToLowerInvariant();
+        address = $"{protocol}://{uri.Host}:{uri.Port}";
+        return true;
     }
 
-    public sealed record ProxyEntry(string Address, string Protocol);
+    private static bool? ReadBoolean(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!element.TryGetProperty(name, out var value)) continue;
+            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                return value.GetBoolean();
+            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+                return parsed;
+        }
+        return null;
+    }
+
+    private static double? ReadNumber(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!element.TryGetProperty(name, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var numeric))
+                return numeric;
+            if (value.ValueKind == JsonValueKind.String &&
+                double.TryParse(value.GetString(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out numeric))
+                return numeric;
+        }
+        return null;
+    }
+
+    private static DateTimeOffset? ReadTimestamp(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!element.TryGetProperty(name, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.String &&
+                DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
+                return parsed.ToUniversalTime();
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var epoch))
+            {
+                try
+                {
+                    return epoch > 100_000_000_000
+                        ? DateTimeOffset.FromUnixTimeMilliseconds((long)epoch)
+                        : DateTimeOffset.FromUnixTimeSeconds((long)epoch);
+                }
+                catch (ArgumentOutOfRangeException) { return null; }
+            }
+        }
+        return null;
+    }
+
+    public sealed record ProxyEntry(
+        string Address,
+        string Protocol,
+        string? Country = null,
+        string? CountryCode = null,
+        string? City = null,
+        string? Anonymity = null,
+        bool? SupportsSsl = null,
+        double? LatencyMilliseconds = null,
+        double? UptimePercent = null,
+        string? Asn = null,
+        string? Isp = null,
+        DateTimeOffset? LastChecked = null);
     public sealed record ProxyListResponse(IReadOnlyList<ProxyEntry> Proxies, DateTimeOffset FetchedAt);
 
     private sealed class ProxyUpstreamException(string message) : Exception(message) { }
