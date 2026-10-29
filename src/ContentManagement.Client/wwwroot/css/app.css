@@ -283,3 +283,46 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   }
   .proxy-page .proxy-feedback { color: #6ee7b7; }
 }
+
+
+/* Pinned proxy outbound API tester */
+.proxy-test-card{margin:1rem 0 1.25rem;padding:1.25rem;border:1px solid #eaecf0;border-radius:14px;background:#fff}
+.proxy-test-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.proxy-test-heading h2{margin:.1rem 0 .35rem;font-size:1.08rem;letter-spacing:-.02em}
+.proxy-test-heading p:not(.proxy-test-eyebrow){margin:0;color:#667085;font-size:.82rem;line-height:1.55}
+.proxy-test-eyebrow{margin:0 0 .35rem;color:#175cd3;font-size:.66rem;font-weight:750;letter-spacing:.12em}
+.proxy-test-badge{flex-shrink:0;padding:.35rem .55rem;border:1px solid #d0d5dd;border-radius:7px;background:#f9fafb;color:#475467;font-size:.7rem;font-weight:650}
+.proxy-test-warning{margin:1rem 0;padding:.75rem .9rem;border:1px solid #fedf89;border-radius:8px;background:#fffaeb;color:#93370d;font-size:.78rem;line-height:1.5}
+.proxy-test-form{display:grid;grid-template-columns:minmax(0,2fr) minmax(100px,.7fr) minmax(120px,.8fr);gap:.9rem}
+.proxy-test-form label,.proxy-test-body-label{display:flex;min-width:0;flex-direction:column;gap:.4rem;color:#344054;font-size:.77rem;font-weight:650}
+.proxy-test-form .proxy-test-url{grid-column:1}
+.proxy-test-form .proxy-test-wide{grid-column:1/-1}
+.proxy-test-form input:not([type=checkbox]),.proxy-test-form select,.proxy-test-form textarea{width:100%;min-width:0;padding:.65rem .75rem;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:#101828;font:inherit;font-size:.83rem;font-weight:400}
+.proxy-test-form input:not([type=checkbox]),.proxy-test-form select{min-height:40px}
+.proxy-test-form textarea{resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.5}
+.proxy-test-form .proxy-test-cache{display:flex;flex-direction:row;align-items:center;gap:.55rem;align-self:center;min-height:40px}
+.proxy-test-form .proxy-test-cache input{width:16px;height:16px;accent-color:#175cd3}
+.proxy-test-actions{display:flex;align-items:center;flex-wrap:wrap;gap:.9rem;margin-top:1rem}
+.proxy-test-result-message,.proxy-test-result-error{font-size:.8rem;line-height:1.5}
+.proxy-test-result-message{color:#067647}.proxy-test-result-error{color:#b42318}
+.proxy-test-response{margin-top:1.25rem;padding:1rem;border:1px solid #eaecf0;border-radius:10px;background:#f9fafb}
+.proxy-test-response-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.proxy-test-response-meta strong{font-size:.85rem}.proxy-test-response-meta span,.proxy-test-content-type{color:#667085;font-size:.75rem;overflow-wrap:anywhere}
+.proxy-test-response details{margin:.8rem 0}
+.proxy-test-response summary{cursor:pointer;color:#475467;font-size:.8rem;font-weight:650}
+.proxy-test-response pre{max-height:360px;overflow:auto;margin:.5rem 0 0;padding:.8rem;border:1px solid #eaecf0;border-radius:8px;background:#fff;color:#101828;font: .78rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.proxy-test-body-label{margin-top:.8rem}
+.proxy-test-body-label pre{max-height:480px}
+@media(max-width:700px){.proxy-test-card{padding:1rem}.proxy-test-heading{flex-direction:column}.proxy-test-form{grid-template-columns:1fr}.proxy-test-form .proxy-test-url,.proxy-test-form .proxy-test-wide{grid-column:1}.proxy-test-actions{align-items:stretch;flex-direction:column}.proxy-test-actions .proxy-refresh-button{width:100%}.proxy-test-response-meta{flex-direction:column;gap:.35rem}}
+
+@media (prefers-color-scheme: dark) {
+  .proxy-page .proxy-test-card,.proxy-page .proxy-test-response{border-color:#374151;background:#111827;color:#e5e7eb}
+  .proxy-page .proxy-test-heading h2,.proxy-page .proxy-test-response-meta strong{color:#f3f4f6}
+  .proxy-page .proxy-test-heading p:not(.proxy-test-eyebrow),.proxy-page .proxy-test-response-meta span,.proxy-page .proxy-test-content-type{color:#9ca3af}
+  .proxy-page .proxy-test-badge{border-color:#4b5563;background:#1f2937;color:#d1d5db}
+  .proxy-page .proxy-test-warning{border-color:#854d0e;background:#422006;color:#fde68a}
+  .proxy-page .proxy-test-form label,.proxy-page .proxy-test-response summary{color:#d1d5db}
+  .proxy-page .proxy-test-form input:not([type=checkbox]),.proxy-page .proxy-test-form select,.proxy-page .proxy-test-form textarea{border-color:#4b5563;background:#1f2937;color:#f3f4f6;color-scheme:dark}
+  .proxy-page .proxy-test-response pre{border-color:#374151;background:#030712;color:#e5e7eb}
+  .proxy-page .proxy-test-result-message{color:#6ee7b7}.proxy-page .proxy-test-result-error{color:#fca5a5}
+}
