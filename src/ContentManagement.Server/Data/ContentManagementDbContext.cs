@@ -123,6 +123,9 @@ public sealed class ContentManagementDbContext(DbContextOptions<ContentManagemen
             entity.HasIndex(file => file.StorageKey).IsUnique();
             entity.HasIndex(file => new { file.Status, file.CreatedUtc });
             entity.HasIndex(file => file.OwnerId);
+            entity.HasIndex(file => new { file.Type, file.OwnerId });
+            entity.Property(file => file.Type).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(FileOwnerType.Legacy);
             entity.Property(file => file.SizeBytes).HasColumnType("bigint");
             entity.Property(file => file.UploadSource).HasDefaultValue(FileUploadSource.Local);
             entity.Property(file => file.RowVersion).IsRowVersion();

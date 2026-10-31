@@ -13,6 +13,7 @@ ContentManagement is a modular-monolith foundation for centralized content stora
 - The server creates the configured filesystem storage root during startup; orphan inventory also recreates the root if it is missing while the process is running.
 - Lifecycle status enum and SQL row-version concurrency tokens.
 - File metadata records `UploadSource` (`Local` or `ExternalServer`); uploads authenticated with a managed API key are classified as external-server uploads, while browser/admin uploads are classified as local. Existing rows default to `Local` through an additive migration.
+- File metadata records `Type` (`Legacy`, `User`, `Client`, or `System`) alongside `OwnerId`. Managed API-client uploads store the authenticated ClientId directly in `OwnerId`; server-generated `clients/{ClientId}/` path namespaces isolate each client's logical file paths. Existing rows are classified as `User` only when `OwnerId` is populated and otherwise remain `Legacy`.
 - All EF Core enum properties are stored in SQL Server as their symbolic string names; the `EnumValuesAsStrings` migration converts existing numeric file/document statuses.
 - Managed API-client authentication via the `X-Content-Management-Key` header and server-side scope policies for files/JSON read, write, and delete operations. Browser administrators use the admin session cookie. All endpoints require authentication by default; health and signed file-view URLs are explicitly anonymous.
 - Unit tests for configuration, compression and filesystem storage; Docker SQL Server integration test applies migrations and verifies metadata persistence.
@@ -189,7 +190,7 @@ The `ContentManagement` section supports `StorageRoot` (filesystem root outside 
 - JSON payloads are intended for GZIP-compressed UTF-8 storage in SQL Server `varbinary(max)`.
 - SHA-256 is integrity metadata, not an authentication token.
 - Filesystem writes and SQL metadata writes cannot share one atomic transaction. An application service must reconcile orphaned binaries and incomplete metadata writes.
-- File endpoints require `files.read`, `files.write`, or `files.delete` scopes for managed API-client callers; the signed-in administrator cookie is allowed for the browser file-management UI. Add per-client identities, ownership policy, rate limiting, and audit logging before exposing the APIs to untrusted external clients.
+- File endpoints require `files.read`, `files.write`, or `files.delete` scopes for managed API-client callers; the signed-in administrator cookie is allowed for the browser file-management UI. Managed API-client file operations are resource-scoped by `Type = Client` and `OwnerId = ClientId`; administrators retain cross-owner access. Review rate limiting and audit logging before exposing the APIs to untrusted external clients.
 - The inline content endpoint enables HTTP Range responses for browser media playback. Browser codec support varies. HTML and SVG are served as `application/octet-stream` to avoid active content executing in the application origin.
 - Text preview is limited to files up to 256 KiB in the UI. Uploaded WebVTT subtitles are currently loaded locally into the browser for the active preview only; they are not persisted or associated with the video on the server. Persistent subtitle management is not yet implemented.
 
@@ -238,7 +239,7 @@ A new client receives an API key in the form cm_<client-id>.<secret>. Store the 
 
 Managed API clients are authenticated through the existing X-Content-Management-Key header. Managed API client scopes are enforced by the same file and JSON authorization policies; no global static API key is required. Client management endpoints require the administrator cookie and are not available to managed API clients.
 
-This feature does not implement OAuth 2.0 Client Credentials or resource-level ownership isolation. Scope assignment is currently at the API capability level (files and JSON); do not expose the API to untrusted clients without separately implementing and reviewing resource-level authorization, API rate limits, and audit logging.
+This feature does not implement OAuth 2.0 Client Credentials. Managed API clients use opaque API keys and capability scopes. File resources are isolated by the server using the authenticated ClientId and file ownership metadata; JSON resources remain governed by their existing authorization behavior. Review rate limiting and audit logging before exposing the APIs to untrusted clients.
 
 ## MySQL health check
 
