@@ -39,9 +39,11 @@ public sealed class ManagedFileStorageIntegrationTests(SqlServerFixture db)
         var fileAId = jsonA.RootElement.GetProperty("id").GetGuid();
         var fileBId = jsonB.RootElement.GetProperty("id").GetGuid();
 
-        using var crossPath = await clientA.GetAsync($"/api/files/by-path?path={Uri.EscapeDataString(path)}");
-        using var crossId = await clientA.GetAsync($"/api/files/{fileBId}");
-        Assert.Equal(HttpStatusCode.NotFound, crossPath.StatusCode);
+        using var ownPath = await clientA.GetAsync("/api/files/by-path?path=" + Uri.EscapeDataString(path));
+        using var foreignNamespace = await clientA.GetAsync("/api/files/by-path?path=" + Uri.EscapeDataString("clients/" + idB + "/" + path));
+        using var crossId = await clientA.GetAsync("/api/files/" + fileBId);
+        Assert.Equal(HttpStatusCode.OK, ownPath.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, foreignNamespace.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, crossId.StatusCode);
 
         var options = new DbContextOptionsBuilder<ContentManagementDbContext>().UseSqlServer(db.ConnectionString).Options;
