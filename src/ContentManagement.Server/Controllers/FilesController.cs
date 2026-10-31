@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text;
+using System.Security.Claims;
 using ContentManagement.Server.Auth;
 using ContentManagement.Server.Configuration;
 using ContentManagement.Server.Data;
@@ -37,7 +38,8 @@ public sealed class FilesController(
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
-        var query = db.Files.AsNoTracking().Where(f => f.Status != ContentStatus.Deleted);
+        var query = ApplyOwnerScope(db.Files.AsNoTracking())
+            .Where(f => f.Status != ContentStatus.Deleted);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -50,12 +52,13 @@ public sealed class FilesController(
             .Select(f => new
             {
                 f.Id, f.FilePath, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
-                f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
+                f.Status, f.UploadSource, f.OwnerId, f.Type, f.CreatedUtc, f.UpdatedUtc, f.RowVersion
             })
             .ToListAsync(cancellationToken);
-        var items = rows.Select(f => new FileListItem(f.Id, f.FilePath, f.FileName, f.ContentType, f.SizeBytes, f.Sha256,
-            f.Status, f.UploadSource, f.OwnerId, f.CreatedUtc, f.UpdatedUtc, Convert.ToBase64String(f.RowVersion),
-            $"/api/files/by-path/content?path={Uri.EscapeDataString(f.FilePath)}")).ToList();
+        var items = rows.Select(f => new FileListItem(f.Id, ToLogicalFilePath(f.FilePath), f.FileName, f.ContentType,
+            f.SizeBytes, f.Sha256, f.Status, f.UploadSource, f.OwnerId, f.Type, f.CreatedUtc, f.UpdatedUtc,
+            Convert.ToBase64String(f.RowVersion),
+            $"/api/files/by-path/content?path={Uri.EscapeDataString(ToLogicalFilePath(f.FilePath))}")).ToList();
         return Ok(new FileListResponse(items, total, page, pageSize));
     }
 
@@ -64,39 +67,63 @@ public sealed class FilesController(
     public async Task<ActionResult<FileDetails>> Upload(
         [FromForm] IFormFile? file,
         [FromForm] string? filePath,
-        CancellationToken cancellationToken)
+        [FromForm] bool @override = false,
+        CancellationToken cancellationToken = default)
     {
-        string? normalizedFilePath = null;
-        if (!string.IsNullOrWhiteSpace(filePath))
-        {
-            if (!FilePathNormalizer.TryNormalize(filePath, out normalizedFilePath))
-                return BadRequest(new { message = "filePath must be a relative path with safe path segments (maximum 450 characters)." });
-
-            if (await db.Files.AsNoTracking().AnyAsync(f => f.FilePath == normalizedFilePath, cancellationToken))
-                return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
-        }
-
-        if (file is null || file.Length <= 0) return BadRequest(new { message = "Choose a non-empty file." });
+        if (file is null || file.Length <= 0)
+            return BadRequest(new { message = "Choose a non-empty file." });
         if (file.Length > options.Value.MaxUploadBytes)
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "File exceeds configured upload limit." });
+
+        var fileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim();
+        if (string.IsNullOrWhiteSpace(fileName) || fileName.Length > 255 || fileName.Any(char.IsControl))
+            return BadRequest(new { message = "Invalid file name." });
+
+        var now = DateTime.UtcNow;
+        var generatedId = Guid.NewGuid();
+        string storedFilePath;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            storedFilePath = BuildStoredFilePath($"files/{now:yyyy/MM/dd}/{generatedId:N}");
+        }
+        else
+        {
+            if (!TryResolveFilePath(filePath, out storedFilePath))
+                return BadRequest(new { message = "filePath must be a relative path with safe path segments (maximum 450 characters)." });
+        }
+
+        var existing = await ApplyOwnerScope(db.Files)
+            .SingleOrDefaultAsync(f => f.FilePath == storedFilePath, cancellationToken);
+        if (existing is not null)
+        {
+            if (!@override)
+                return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
+            if (existing.Status != ContentStatus.Active)
+                return Conflict(new { message = "A file at this path is pending deletion and cannot be overwritten." });
+        }
+        else if (await db.Files.AsNoTracking().AnyAsync(f => f.FilePath == storedFilePath, cancellationToken))
+        {
+            return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
+        }
 
         var settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
         if (settings?.ExternalStoragePreferred == true && !_externalStorage.IsConfigured)
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
                 new { message = "External storage is enabled but ExternalStorage:BaseUrl or ExternalStorage:ApiKey is missing from server configuration." });
 
+        var oldStorageKey = existing?.StorageKey;
+        var oldStorageSource = existing?.UploadSource;
         if (settings?.ExternalStoragePreferred == true && _externalStorage.IsConfigured)
         {
             await ExternalUploadGate.WaitAsync(cancellationToken);
             try
             {
-                // The application is deployed as one server process. Serialize quota check, external
-                // upload and metadata commit so concurrent uploads cannot oversubscribe the quota.
                 settings = await db.SystemSettings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
                 var usedBytes = await db.Files.AsNoTracking()
                     .Where(f => f.UploadSource == FileUploadSource.ExternalServer && f.Status != ContentStatus.Deleted)
                     .Select(f => (long?)f.SizeBytes).SumAsync(cancellationToken) ?? 0L;
-                var remaining = Math.Max(0, (settings?.ExternalStorageQuotaBytes ?? 0) - usedBytes);
+                var reclaimableBytes = existing?.UploadSource == FileUploadSource.ExternalServer ? existing.SizeBytes : 0L;
+                var remaining = Math.Max(0, (settings?.ExternalStorageQuotaBytes ?? 0) - usedBytes + reclaimableBytes);
                 if (settings is not null && file.Length <= remaining)
                 {
                     var externalKey = $"{DateTime.UtcNow:yyyy/MM/dd}/{Guid.NewGuid():N}.bin";
@@ -105,8 +132,7 @@ public sealed class FilesController(
                     {
                         try
                         {
-                            externalBinary = await externalFiles.UploadAsync(
-                                externalKey, file.FileName, input, cancellationToken);
+                            externalBinary = await externalFiles.UploadAsync(externalKey, fileName, input, cancellationToken);
                         }
                         catch (HttpRequestException exception)
                         {
@@ -118,36 +144,37 @@ public sealed class FilesController(
 
                     if (externalBinary.SizeBytes > remaining || externalBinary.SizeBytes != file.Length)
                     {
-                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
-                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary that exceeded the reserved quota."); }
-                        logger.LogError("External File API reported an unexpected file size {ActualSize} for upload size {ExpectedSize}.",
-                            externalBinary.SizeBytes, file.Length);
+                        await TryDeleteNewBinaryAsync(FileUploadSource.ExternalServer, externalKey);
+                        logger.LogError("External File API returned an unexpected file size for upload.");
                         return StatusCode(StatusCodes.Status502BadGateway,
                             new { message = "External File API returned unexpected file size metadata." });
                     }
 
-                    var externalEntity = CreateEntity(file, externalBinary, FileUploadSource.ExternalServer, normalizedFilePath);
-                    if (string.IsNullOrWhiteSpace(externalEntity.FileName) || externalEntity.FileName.Length > 255)
-                    {
-                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
-                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary for invalid file metadata."); }
-                        return BadRequest(new { message = "Invalid file name." });
-                    }
+                    var entity = existing ?? CreateEntity(file, externalBinary, FileUploadSource.ExternalServer, storedFilePath, generatedId);
+                    ApplyUploadedBinary(entity, file, externalBinary, FileUploadSource.ExternalServer, storedFilePath);
                     try
                     {
-                        db.Files.Add(externalEntity);
+                        if (existing is null) db.Files.Add(entity);
                         await db.SaveChangesAsync(cancellationToken);
+                    }
+                    catch (DbUpdateConcurrencyException)
+                    {
+                        await TryDeleteNewBinaryAsync(FileUploadSource.ExternalServer, externalKey);
+                        return Conflict(new { message = "File metadata changed. Refresh and retry." });
                     }
                     catch (Exception exception)
                     {
-                        try { await externalFiles.DeleteAsync(externalKey, CancellationToken.None); }
-                        catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to remove external binary after metadata persistence failed."); }
-                        if (normalizedFilePath is not null &&
-                            exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+                        await TryDeleteNewBinaryAsync(FileUploadSource.ExternalServer, externalKey);
+                        if (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
                             return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
                         throw;
                     }
-                    return CreatedAtAction(nameof(Get), new { id = externalEntity.Id }, ToDetails(externalEntity));
+
+                    if (oldStorageKey is not null)
+                        await TryDeleteNewBinaryAsync(oldStorageSource!.Value, oldStorageKey);
+                    return existing is null
+                        ? CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity))
+                        : Ok(ToDetails(entity));
                 }
             }
             finally
@@ -163,50 +190,144 @@ public sealed class FilesController(
             catch (InvalidDataException) { return StatusCode(StatusCodes.Status413PayloadTooLarge); }
         }
 
-        var entity = CreateEntity(file, binary, FileUploadSource.Local, normalizedFilePath);
-        if (string.IsNullOrWhiteSpace(entity.FileName))
-        {
-            await storage.DeleteAsync(binary.StorageKey, cancellationToken);
-            return BadRequest(new { message = "Invalid file name." });
-        }
-
+        var localEntity = existing ?? CreateEntity(file, binary, FileUploadSource.Local, storedFilePath, generatedId);
+        ApplyUploadedBinary(localEntity, file, binary, FileUploadSource.Local, storedFilePath);
         try
         {
-            db.Files.Add(entity);
+            if (existing is null) db.Files.Add(localEntity);
             await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await TryDeleteNewBinaryAsync(FileUploadSource.Local, binary.StorageKey);
+            return Conflict(new { message = "File metadata changed. Refresh and retry." });
         }
         catch (Exception exception)
         {
-            try { await storage.DeleteAsync(binary.StorageKey, cancellationToken); }
-            catch (Exception cleanupException) { logger.LogError(cleanupException, "Failed to clean up orphaned binary after metadata persistence failure."); }
-            if (normalizedFilePath is not null &&
-                exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+            await TryDeleteNewBinaryAsync(FileUploadSource.Local, binary.StorageKey);
+            if (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
                 return Conflict(new { message = "filePath is already assigned to a file and cannot be reused." });
             throw;
         }
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, ToDetails(entity));
+
+        if (oldStorageKey is not null)
+            await TryDeleteNewBinaryAsync(oldStorageSource!.Value, oldStorageKey);
+        return existing is null
+            ? CreatedAtAction(nameof(Get), new { id = localEntity.Id }, ToDetails(localEntity))
+            : Ok(ToDetails(localEntity));
     }
 
     private StoredFile CreateEntity(
-        IFormFile file, StoredBinary binary, FileUploadSource source, string? normalizedFilePath)
+        IFormFile file, StoredBinary binary, FileUploadSource source, string storedFilePath, Guid id)
     {
         var now = DateTime.UtcNow;
-        var id = Guid.NewGuid();
-        return new StoredFile
+        var (ownerType, ownerId) = ResolveOwner();
+        var entity = new StoredFile
         {
             Id = id,
-            FilePath = normalizedFilePath ?? $"files/{now:yyyy/MM/dd}/{id:N}",
-            FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim(),
-            ContentType = ResolveContentType(file.ContentType, file.FileName),
-            StorageKey = binary.StorageKey,
-            SizeBytes = binary.SizeBytes,
-            Sha256 = binary.Sha256,
+            FilePath = storedFilePath,
             CreatedUtc = now,
-            UpdatedUtc = now,
             Status = ContentStatus.Active,
-            UploadSource = source,
-            OwnerId = User.FindFirst("sub")?.Value
+            Type = ownerType,
+            OwnerId = ownerId
         };
+        ApplyUploadedBinary(entity, file, binary, source, storedFilePath);
+        return entity;
+    }
+
+    private void ApplyUploadedBinary(
+        StoredFile entity, IFormFile file, StoredBinary binary, FileUploadSource source, string storedFilePath)
+    {
+        entity.FilePath = storedFilePath;
+        entity.FileName = Path.GetFileName((file.FileName ?? string.Empty).Replace((char)92, '/')).Trim();
+        entity.ContentType = ResolveContentType(file.ContentType, file.FileName);
+        entity.StorageKey = binary.StorageKey;
+        entity.SizeBytes = binary.SizeBytes;
+        entity.Sha256 = binary.Sha256;
+        entity.UpdatedUtc = DateTime.UtcNow;
+        entity.Status = ContentStatus.Active;
+        entity.UploadSource = source;
+    }
+
+    private (FileOwnerType Type, string? OwnerId) ResolveOwner()
+    {
+        var clientId = User.FindFirst("client_id")?.Value;
+        if (!string.IsNullOrWhiteSpace(clientId))
+            return (FileOwnerType.Client, clientId);
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub")?.Value;
+        return string.IsNullOrWhiteSpace(userId)
+            ? (FileOwnerType.Legacy, null)
+            : (FileOwnerType.User, userId);
+    }
+
+    private IQueryable<StoredFile> ApplyOwnerScope(IQueryable<StoredFile> query)
+    {
+        var clientId = User.FindFirst("client_id")?.Value;
+        if (!string.IsNullOrWhiteSpace(clientId))
+            return query.Where(file => file.Type == FileOwnerType.Client && file.OwnerId == clientId);
+
+        if (User.IsInRole("Administrator"))
+            return query;
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub")?.Value;
+        return string.IsNullOrWhiteSpace(userId)
+            ? query.Where(_ => false)
+            : query.Where(file => file.Type == FileOwnerType.User && file.OwnerId == userId);
+    }
+
+    private bool TryResolveFilePath(string? requestedPath, out string storedFilePath)
+    {
+        storedFilePath = string.Empty;
+        if (!FilePathNormalizer.TryNormalize(requestedPath, out var normalizedPath))
+            return false;
+
+        var clientId = User.FindFirst("client_id")?.Value;
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            storedFilePath = normalizedPath;
+            return true;
+        }
+
+        var prefix = $"clients/{clientId}/";
+        if (normalizedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        storedFilePath = prefix + normalizedPath;
+        return storedFilePath.Length <= 450;
+    }
+
+    private string BuildStoredFilePath(string relativePath)
+    {
+        var clientId = User.FindFirst("client_id")?.Value;
+        var storedPath = string.IsNullOrWhiteSpace(clientId) ? relativePath : $"clients/{clientId}/{relativePath}";
+        if (storedPath.Length > 450)
+            throw new InvalidOperationException("Generated file path exceeds the configured maximum length.");
+        return storedPath;
+    }
+
+    private string ToLogicalFilePath(string storedFilePath)
+    {
+        var clientId = User.FindFirst("client_id")?.Value;
+        var prefix = string.IsNullOrWhiteSpace(clientId) ? null : $"clients/{clientId}/";
+        return prefix is not null && storedFilePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? storedFilePath[prefix.Length..]
+            : storedFilePath;
+    }
+
+    private async Task TryDeleteNewBinaryAsync(FileUploadSource source, string storageKey)
+    {
+        try
+        {
+            if (source == FileUploadSource.ExternalServer)
+                await externalFiles.DeleteAsync(storageKey, CancellationToken.None);
+            else
+                await storage.DeleteAsync(storageKey, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Failed to clean up file binary {StorageKey}.", storageKey);
+        }
     }
 
     [HttpGet("by-path")]
@@ -214,10 +335,10 @@ public sealed class FilesController(
     public async Task<ActionResult<FileDetails>> GetByPath(
         [FromQuery, Required] string? path, CancellationToken cancellationToken)
     {
-        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+        if (!TryResolveFilePath(path, out var normalizedPath))
             return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
 
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(
             f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
         return file is null ? NotFound() : Ok(ToDetails(file));
     }
@@ -227,10 +348,10 @@ public sealed class FilesController(
     public async Task<IActionResult> ContentByPath(
         [FromQuery, Required] string? path, CancellationToken cancellationToken)
     {
-        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+        if (!TryResolveFilePath(path, out var normalizedPath))
             return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
 
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(
             f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
         return file is null ? NotFound() : await Content(file.Id, cancellationToken);
     }
@@ -240,10 +361,10 @@ public sealed class FilesController(
     public async Task<IActionResult> DownloadByPath(
         [FromQuery, Required] string? path, CancellationToken cancellationToken)
     {
-        if (!FilePathNormalizer.TryNormalize(path, out var normalizedPath))
+        if (!TryResolveFilePath(path, out var normalizedPath))
             return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
 
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(
             f => f.FilePath == normalizedPath && f.Status == ContentStatus.Active, cancellationToken);
         return file is null ? NotFound() : await Download(file.Id, cancellationToken);
     }
@@ -252,7 +373,7 @@ public sealed class FilesController(
     [Authorize(Policy = ScopePolicies.FilesRead)]
     public async Task<ActionResult<FileDetails>> Get(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status is ContentStatus.MarkedForDeletion or ContentStatus.Deleting or ContentStatus.Deleted)
             return NotFound();
         return Ok(ToDetails(file));
@@ -262,7 +383,7 @@ public sealed class FilesController(
     [Authorize(Policy = ScopePolicies.FilesRead)]
     public async Task<IActionResult> Content(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
         try
         {
@@ -292,7 +413,7 @@ public sealed class FilesController(
     [Authorize(Policy = ScopePolicies.FilesRead)]
     public async Task<IActionResult> Preview(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
 
         if (!Path.GetExtension(file.FileName).Equals(".wmv", StringComparison.OrdinalIgnoreCase))
@@ -323,7 +444,7 @@ public sealed class FilesController(
     [Authorize(Policy = ScopePolicies.FilesRead)]
     public async Task<IActionResult> Download(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files.AsNoTracking()).SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null || file.Status != ContentStatus.Active) return NotFound();
         try
         {
@@ -352,7 +473,7 @@ public sealed class FilesController(
         var name = Path.GetFileName(request.FileName?.Trim());
         if (string.IsNullOrWhiteSpace(name) || name.Length > 255 || name.Any(char.IsControl))
             return BadRequest(new { message = "File name must be 1–255 characters and contain no control characters." });
-        var file = await db.Files.SingleOrDefaultAsync(f => f.Id == id && f.Status == ContentStatus.Active, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files).SingleOrDefaultAsync(f => f.Id == id && f.Status == ContentStatus.Active, cancellationToken);
         if (file is null) return NotFound();
         if (!string.IsNullOrWhiteSpace(request.RowVersion) &&
             !Convert.ToBase64String(file.RowVersion).Equals(request.RowVersion, StringComparison.Ordinal))
@@ -368,7 +489,7 @@ public sealed class FilesController(
     [Authorize(Policy = ScopePolicies.FilesWrite)]
     public async Task<IActionResult> Restore(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.SingleOrDefaultAsync(
+        var file = await ApplyOwnerScope(db.Files).SingleOrDefaultAsync(
             f => f.Id == id && f.Status == ContentStatus.MarkedForDeletion, cancellationToken);
         if (file is null)
             return Conflict(new { message = "Only files marked for deletion can be restored." });
@@ -388,17 +509,40 @@ public sealed class FilesController(
         return Ok(ToDetails(file));
     }
 
+    [HttpDelete("by-path")]
+    [Authorize(Policy = ScopePolicies.FilesDelete)]
+    public async Task<IActionResult> DeleteByPath(
+        [FromQuery, Required] string? path, CancellationToken cancellationToken)
+    {
+        if (!TryResolveFilePath(path, out var normalizedPath))
+            return BadRequest(new { message = "path must be a relative path with safe path segments (maximum 450 characters)." });
+
+        var file = await ApplyOwnerScope(db.Files).SingleOrDefaultAsync(
+            f => f.FilePath == normalizedPath, cancellationToken);
+        if (file is null) return NoContent();
+        return await MarkForDeletionAsync(file, cancellationToken);
+    }
+
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = ScopePolicies.FilesDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var file = await db.Files.SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
+        var file = await ApplyOwnerScope(db.Files).SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (file is null) return NoContent();
+        return await MarkForDeletionAsync(file, cancellationToken);
+    }
+
+    private async Task<IActionResult> MarkForDeletionAsync(StoredFile file, CancellationToken cancellationToken)
+    {
         if (file.Status == ContentStatus.Active)
         {
             file.Status = ContentStatus.MarkedForDeletion;
             file.UpdatedUtc = DateTime.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
+            try { await db.SaveChangesAsync(cancellationToken); }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Conflict(new { message = "File metadata changed. Refresh and retry." });
+            }
         }
         return Accepted(new { file.Id, file.Status });
     }
@@ -441,15 +585,16 @@ public sealed class FilesController(
             ? "application/octet-stream" : value;
     }
 
-    private static FileDetails ToDetails(StoredFile file) => new(file.Id, file.FilePath, file.FileName, file.ContentType,
-        file.SizeBytes, file.Sha256, file.Status, file.UploadSource, file.OwnerId, file.CreatedUtc, file.UpdatedUtc,
-        Convert.ToBase64String(file.RowVersion));
+    private FileDetails ToDetails(StoredFile file) => new(file.Id, ToLogicalFilePath(file.FilePath), file.FileName,
+        file.ContentType, file.SizeBytes, file.Sha256, file.Status, file.UploadSource, file.OwnerId, file.Type,
+        file.CreatedUtc, file.UpdatedUtc, Convert.ToBase64String(file.RowVersion));
 
     public sealed record FileListItem(Guid Id, string FilePath, string FileName, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc,
-        DateTime UpdatedUtc, string RowVersion, string ViewUrl);
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, FileOwnerType Type,
+        DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion, string ViewUrl);
     public sealed record FileListResponse(IReadOnlyList<FileListItem> Items, long Total, int Page, int PageSize);
     public sealed record FileDetails(Guid Id, string FilePath, string FileName, string ContentType, long SizeBytes,
-        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
+        string Sha256, ContentStatus Status, FileUploadSource UploadSource, string? OwnerId, FileOwnerType Type,
+        DateTime CreatedUtc, DateTime UpdatedUtc, string RowVersion);
     public sealed record RenameFileRequest([Required, StringLength(255)] string FileName, string? RowVersion);
 }
