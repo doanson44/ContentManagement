@@ -113,6 +113,10 @@ public sealed class FilesController(
 
         var oldStorageKey = existing?.StorageKey;
         var oldStorageSource = existing?.UploadSource;
+        if (existing?.UploadSource == FileUploadSource.ExternalServer && !_externalStorage.IsConfigured)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "The existing file uses external storage, which is not configured. The file was not changed." });
+
         if (settings?.ExternalStoragePreferred == true && _externalStorage.IsConfigured)
         {
             await ExternalUploadGate.WaitAsync(cancellationToken);
