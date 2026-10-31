@@ -26,10 +26,15 @@ public sealed class AddFileOwnership : Migration
             SET [Type] = N'User'
             WHERE [OwnerId] IS NOT NULL;
             """);
+        migrationBuilder.CreateIndex(
+            name: "IX_Files_Type_OwnerId",
+            table: "Files",
+            columns: new[] { "Type", "OwnerId" });
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.DropIndex(name: "IX_Files_Type_OwnerId", table: "Files");
         migrationBuilder.DropColumn(name: "Type", table: "Files");
     }
 }
