@@ -134,6 +134,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.HasKey("Id");
             b.HasIndex("FilePath").IsUnique();
             b.HasIndex("OwnerId");
+            b.HasIndex("Type", "OwnerId");
             b.HasIndex("StorageKey").IsUnique();
             b.HasIndex("Status", "CreatedUtc");
             b.ToTable("Files");
