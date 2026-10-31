@@ -56,6 +56,11 @@ public sealed class ManagedFileStorageIntegrationTests(SqlServerFixture db)
         Assert.Equal(idB, fileB.OwnerId);
         Assert.Equal($"clients/{idA}/{path}", fileA.FilePath);
         Assert.Equal($"clients/{idB}/{path}", fileB.FilePath);
+
+        using var listResponse = await clientA.GetAsync("/api/files");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var list = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(1, list.RootElement.GetProperty("total").GetInt32());
     }
 
     [Fact]
