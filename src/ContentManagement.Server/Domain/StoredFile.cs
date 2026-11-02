@@ -34,6 +34,8 @@ public sealed class StoredFile
     [MaxLength(200)]
     public string? OwnerId { get; set; }
 
+    public FileOwnerType Type { get; set; } = FileOwnerType.Legacy;
+
     [Timestamp]
     public byte[] RowVersion { get; set; } = [];
 }

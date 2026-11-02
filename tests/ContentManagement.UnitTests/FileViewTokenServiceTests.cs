@@ -29,8 +29,10 @@ public sealed class FileViewTokenServiceTests
         var service = CreateService();
         var url = service.CreateRelativeUrl(Guid.NewGuid());
         var token = url[(url.LastIndexOf('/') + 1)..];
-        var tampered = token[..^1] + (token[^1] == 'A' ? "B" : "A");
+        var separator = token.IndexOf('.');
+        var tampered = (token[0] == 'A' ? "B" : "A") + token[1..];
 
+        Assert.True(separator > 0);
         Assert.False(service.TryValidate(tampered, out _));
     }
 

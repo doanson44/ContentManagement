@@ -123,6 +123,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("FileName").IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
             b.Property<string>("FilePath").IsRequired().HasMaxLength(450).HasColumnType("nvarchar(450)");
             b.Property<string>("OwnerId").HasMaxLength(200).HasColumnType("nvarchar(200)");
+            b.Property<FileOwnerType>("Type").ValueGeneratedOnAdd().HasConversion<string>().HasMaxLength(32).IsRequired().HasColumnType("nvarchar(32)").HasDefaultValue(FileOwnerType.Legacy);
             b.Property<byte[]>("RowVersion").IsRequired().IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
             b.Property<string>("Sha256").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
             b.Property<long>("SizeBytes").HasColumnType("bigint");
@@ -133,6 +134,7 @@ partial class ContentManagementDbContextModelSnapshot : ModelSnapshot
             b.HasKey("Id");
             b.HasIndex("FilePath").IsUnique();
             b.HasIndex("OwnerId");
+            b.HasIndex("Type", "OwnerId");
             b.HasIndex("StorageKey").IsUnique();
             b.HasIndex("Status", "CreatedUtc");
             b.ToTable("Files");
